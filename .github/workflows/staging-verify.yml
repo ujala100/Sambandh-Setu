@@ -1,0 +1,49 @@
+name: staging-verify
+
+# Manual read-only post-deploy verification for Render staging services.
+# Never triggers deployments or POST requests.
+on:
+  workflow_dispatch:
+    inputs:
+      setu_ai_url:
+        description: "Setu AI staging base URL"
+        required: true
+        default: "https://setu-guide-1wiy.onrender.com"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-setu-ai:
+    name: verify setu_ai staging (read-only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GET /health (cold-start tolerant)
+        env:
+          BASE_URL: ${{ inputs.setu_ai_url }}
+        run: |
+          set -euo pipefail
+          url="${BASE_URL%/}/health"
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 60 "${url}" || echo "000")
+            echo "Attempt ${attempt}: HTTP ${code}"
+            if [ "${code}" = "200" ]; then
+              cat /tmp/health.json
+              echo ""
+              grep -q '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed after 3 attempts"
+          exit 1
+
+      - name: Check GET /docs
+        env:
+          BASE_URL: ${{ inputs.setu_ai_url }}
+        run: |
+          set -euo pipefail
+          url="${BASE_URL%/}/docs"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "${url}")
+          echo "GET ${url} -> HTTP ${code}"
+          test "${code}" = "200"

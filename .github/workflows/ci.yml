@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-test:
+    name: backend (Node 20 tests + Docker build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend/backend
+        run: npm ci
+      - name: Run unit, privacy, CORS, and Sentry tests
+        working-directory: backend/backend
+        run: npm test
+      - name: Run security header tests
+        working-directory: backend/backend
+        run: npm run --if-present test:security
+      - name: Run rate limiter tests
+        working-directory: backend/backend
+        run: npm run --if-present test:ratelimit
+      - name: Run production config isolation tests
+        working-directory: backend
+        run: node --test ./test/prod-config-isolation.test.js
+      - name: Verify backend Docker image build
+        run: docker build -t sambandh-backend:ci -f backend/Dockerfile backend
+
+  frontend-build:
+    name: frontend (Expo web build + TS check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: TypeScript typecheck (non-blocking until pre-existing errors are resolved)
+        continue-on-error: true
+        run: npx tsc --noEmit
+      - name: Build Expo web bundle
+        run: npm run build
+
+  setu-ai-test:
+    name: setu_ai (Python 3.11 pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: setu_ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            setu_ai/requirements.txt
+            setu_ai/requirements-dev.txt
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run pytest suite (excluding container tests)
+        run: python -m pytest -q --ignore=tests/failure/test_container.py
+
+  setu-ai-container:
+    name: setu_ai (Docker build + container tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: setu_ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            setu_ai/requirements.txt
+            setu_ai/requirements-dev.txt
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Build setu_ai Docker image
+        run: docker build -t setu-guide-api:day3 -f docker/Dockerfile .
+      - name: Run container failure and log-privacy tests
+        run: python -m pytest -v tests/failure/test_container.py
