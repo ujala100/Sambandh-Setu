@@ -14,7 +14,7 @@ but never decides.
 |---|---|
 | `frontend/` | The app: Expo + React Native + TypeScript. One codebase for the website (react-native-web) and Android/iOS. Phones get the App designs (floating 5-tab bar); desktop browsers get the Web designs (top bar, left navigation, right rails, two-pane Settings). |
 | `backend/backend/` | The API: Node.js + Express. PostgreSQL in production, SQLite for local development and tests. |
-| `api/[...path].js` | Vercel Function that serves the Express API at `/api/*`. |
+| `api/index.js` | Vercel Function that serves the Express API at `/api/*`. |
 | `setu_ai/` | The optional Python (FastAPI) Setu Guide service. When it is not configured, the API answers with its built-in, knowledge-base responder. |
 | `vercel.json` | One Vercel project serves the web app and the API on the same domain. |
 
