@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { before, after, test } = require("node:test");
-const { start, member } = require("./helpers");
+const { start, member, PW, NEW_PW, WRONG_PW } = require("./helpers");
 
 let api;
 before(async () => { api = await start(); });
@@ -9,17 +9,17 @@ after(async () => { await api.stop(); });
 // ---------------- Auth ----------------
 
 test("sign-up validates input and never returns a code", async () => {
-    const weak = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "weak@example.com", password: "password", acceptTerms: true } });
+    const weak = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "weak@example.com", password: "alllowercase", acceptTerms: true } });
     assert.equal(weak.status, 400);
-    const noTerms = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "terms@example.com", password: "Setu@2026!" } });
+    const noTerms = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "terms@example.com", password: PW } });
     assert.equal(noTerms.status, 400);
-    const ok = await api.call("POST", "/auth/signup", { body: { fullName: "Asha Rao", email: "Asha@Example.com", password: "Setu@2026!", acceptTerms: true, phone: "98765 43210" } });
+    const ok = await api.call("POST", "/auth/signup", { body: { fullName: "Asha Rao", email: "Asha@Example.com", password: PW, acceptTerms: true, phone: "98765 43210" } });
     assert.equal(ok.status, 201);
     assert.ok(ok.data.token);
     assert.equal(ok.data.user.email, "asha@example.com");
     assert.equal(ok.data.user.phoneVerified, false);
     assert.equal(JSON.stringify(ok.body).match(/"code"\s*:\s*"\d{6}"/), null);
-    const dup = await api.call("POST", "/auth/signup", { body: { fullName: "Asha Two", email: "asha@example.com", password: "Setu@2026!", acceptTerms: true } });
+    const dup = await api.call("POST", "/auth/signup", { body: { fullName: "Asha Two", email: "asha@example.com", password: PW, acceptTerms: true } });
     assert.equal(dup.status, 409);
 });
 
@@ -30,9 +30,9 @@ test("audit #1: OTP endpoints cannot be used to take over an account", async () 
     const req1 = await api.call("POST", "/auth/login/code", { body: { email: "victim@example.com", isPhone: true } });
     assert.equal(req1.status, 503);
     assert.equal(req1.body.data?.code, undefined);
-    const verify = await api.call("POST", "/auth/login/verify", { body: { email: "victim@example.com", code: "123456", password: "Hacked@123!" } });
+    const verify = await api.call("POST", "/auth/login/verify", { body: { email: "victim@example.com", code: "123456", password: NEW_PW } });
     assert.notEqual(verify.status, 200);
-    const login = await api.call("POST", "/auth/login", { body: { identifier: "victim@example.com", password: "Setu@2026!" } });
+    const login = await api.call("POST", "/auth/login", { body: { identifier: "victim@example.com", password: PW } });
     assert.equal(login.status, 200, "victim's password must be unchanged");
     const forgot = await api.call("POST", "/auth/forgot-password", { body: { email: "victim@example.com" } });
     assert.equal(forgot.status, 503);
@@ -41,8 +41,8 @@ test("audit #1: OTP endpoints cannot be used to take over an account", async () 
 
 test("login works with email and rejects wrong passwords with one generic message", async () => {
     await member(api.call, { email: "login@example.com" });
-    const bad = await api.call("POST", "/auth/login", { body: { identifier: "login@example.com", password: "Wrong@1234" } });
-    const unknown = await api.call("POST", "/auth/login", { body: { identifier: "nobody@example.com", password: "Wrong@1234" } });
+    const bad = await api.call("POST", "/auth/login", { body: { identifier: "login@example.com", password: WRONG_PW } });
+    const unknown = await api.call("POST", "/auth/login", { body: { identifier: "nobody@example.com", password: WRONG_PW } });
     assert.equal(bad.status, 401);
     assert.equal(unknown.status, 401);
     assert.equal(bad.error.message, unknown.error.message);
@@ -50,7 +50,7 @@ test("login works with email and rejects wrong passwords with one generic messag
 
 test("changing the password revokes other sessions", async () => {
     const m = await member(api.call);
-    const changed = await api.call("POST", "/auth/change-password", { token: m.token, body: { currentPassword: "Setu@2026!", newPassword: "Newer@2026!" } });
+    const changed = await api.call("POST", "/auth/change-password", { token: m.token, body: { currentPassword: PW, newPassword: NEW_PW } });
     assert.equal(changed.status, 200);
     const old = await api.call("GET", "/me", { token: m.token });
     assert.equal(old.status, 401);
@@ -219,13 +219,13 @@ test("verification stays in review until a person decides", async () => {
 
 test("audit #10: deleting an account really deletes it", async () => {
     const m = await member(api.call, { email: "leaving@example.com" });
-    const wrong = await api.call("DELETE", "/me", { token: m.token, body: { password: "Wrong@1234", confirm: "DELETE" } });
+    const wrong = await api.call("DELETE", "/me", { token: m.token, body: { password: WRONG_PW, confirm: "DELETE" } });
     assert.equal(wrong.status, 400);
-    const ok = await api.call("DELETE", "/me", { token: m.token, body: { password: "Setu@2026!", confirm: "DELETE" } });
+    const ok = await api.call("DELETE", "/me", { token: m.token, body: { password: PW, confirm: "DELETE" } });
     assert.equal(ok.status, 200);
     assert.equal((await api.call("GET", "/me", { token: m.token })).status, 401);
-    assert.equal((await api.call("POST", "/auth/login", { body: { identifier: "leaving@example.com", password: "Setu@2026!" } })).status, 401);
-    const again = await api.call("POST", "/auth/signup", { body: { fullName: "New Me", email: "leaving@example.com", password: "Setu@2026!", acceptTerms: true } });
+    assert.equal((await api.call("POST", "/auth/login", { body: { identifier: "leaving@example.com", password: PW } })).status, 401);
+    const again = await api.call("POST", "/auth/signup", { body: { fullName: "New Me", email: "leaving@example.com", password: PW, acceptTerms: true } });
     assert.equal(again.status, 201);
 });
 

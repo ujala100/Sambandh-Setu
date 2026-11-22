@@ -25,7 +25,8 @@ const PEOPLE = [
     { name: "Varun Joshi", gender: "Man", dob: "1998-06-30", location: "Pune, Maharashtra", profession: "Product Designer", education: "B.Des", bio: "I enjoy meaningful conversations and value honesty.", interests: ["Design", "Music", "Travel"], values: ["Respect", "Emotional Maturity"] }
 ];
 
-const PASSWORD = `Demo@${crypto.randomInt(1000, 9999)}!`;
+// Random per run and printed once; never stored in the repository.
+const PASSWORD = `${crypto.randomBytes(9).toString("base64url")}!7`;
 
 (async () => {
     initDb();
