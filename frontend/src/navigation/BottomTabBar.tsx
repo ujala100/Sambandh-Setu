@@ -1,68 +1,48 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, shadow } from '../theme';
+import { useLayout } from '../hooks/useLayout';
 
-// What the centre (infinity) button does:
-//   false = opens the Journey page (stages, with Ask Setu Guide inside). This is the Figma flow.
-//   true  = opens the Setu Guide chat directly
-const CENTER_OPENS_CHAT = false;
-
-type Tab = { icon: string; active: string; label: string; center?: boolean };
-const CENTER: Tab = { icon: 'infinity', active: 'infinity', label: 'Setu Guide', center: true };
-
-// icon = outline (not selected), active = solid (selected)
-const TABS: Record<string, Tab> = {
-  Home: { icon: 'home-outline', active: 'home', label: 'Home' },
-  Connections: { icon: 'people-outline', active: 'people', label: 'Connections' },
-  Journey: CENTER,
-  Guide: CENTER,
-  Chats: { icon: 'chatbubble-ellipses-outline', active: 'chatbubble-ellipses', label: 'Chats' },
-  Profile: { icon: 'person-outline', active: 'person', label: 'Profile' },
+const ICONS: Record<string, { on: any; off: any; label: string }> = {
+  Home: { on: 'home', off: 'home-outline', label: 'Home' },
+  Connections: { on: 'people', off: 'people-outline', label: 'Connections' },
+  Guide: { on: 'infinite', off: 'infinite', label: 'Setu Guide' },
+  Chats: { on: 'chatbubble-ellipses', off: 'chatbubble-ellipses-outline', label: 'Chat' },
+  Profile: { on: 'person', off: 'person-outline', label: 'Profile' },
 };
 
+/**
+ * Floating 5-slot footer ("06 · Finalized Footer Navigation"): equal widths, Trust Blue active
+ * circle, Setu Guide as the horizontal 8 in the middle. Hidden on desktop (left navigation instead).
+ */
 export default function BottomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-
+  const { wide } = useLayout();
+  if (wide) return null;
   return (
-    <View style={[styles.outer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      <View style={[styles.bar, shadow.card]}>
-        {state.routes.map((route, index) => {
-          const cfg = TABS[route.name];
-          if (!cfg) return null; // unknown route: skipped instead of crashing
-          const focused = state.index === index;
-
-          const onPress = () => {
-            if (cfg.center && CENTER_OPENS_CHAT) {
-              navigation.navigate('Guide' as never);
-              return;
-            }
-            const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!focused && !e.defaultPrevented) navigation.navigate(route.name);
-          };
-
+    <View style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
+      <View style={styles.bar} accessibilityRole="tablist">
+        {state.routes.map((route, i) => {
+          const focused = state.index === i;
+          const meta = ICONS[route.name];
+          const guide = route.name === 'Guide';
           return (
             <Pressable
               key={route.key}
-              onPress={onPress}
               accessibilityRole="tab"
-              accessibilityLabel={cfg.label}
               accessibilityState={{ selected: focused }}
-              style={styles.tab}
+              accessibilityLabel={meta.label}
+              onPress={() => {
+                const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                if (!focused && !e.defaultPrevented) navigation.navigate(route.name as never);
+              }}
+              style={styles.slot}
             >
-              <View style={[
-                styles.circle,
-                cfg.center && { backgroundColor: focused ? colors.primary : colors.primarySoft },
-                !cfg.center && focused && { backgroundColor: colors.primary },
-              ]}>
-                {cfg.center ? (
-                  <MaterialCommunityIcons name="infinity" size={26} color={focused ? '#fff' : colors.primary} />
-                ) : (
-                  // solid when selected, outline when not
-                  <Ionicons name={(focused ? cfg.active : cfg.icon) as any} size={22} color={focused ? '#fff' : colors.text} />
-                )}
+              <View style={[styles.circle, guide && !focused && styles.guideIdle, focused && styles.active]}>
+                <Ionicons name={focused ? meta.on : meta.off} size={guide ? 26 : 22} color={focused ? '#fff' : guide ? colors.primary : colors.text} />
               </View>
             </Pressable>
           );
@@ -73,8 +53,10 @@ export default function BottomTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 const styles = StyleSheet.create({
-  outer: { backgroundColor: colors.bg, paddingHorizontal: 16, paddingTop: 6 },
-  bar: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 8, justifyContent: 'space-between' },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
-  circle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  wrap: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
+  bar: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 36, height: 68, width: '100%' as any, maxWidth: 460, paddingHorizontal: 8, alignItems: 'center', borderWidth: 1, borderColor: '#EEF2F7', ...shadow.elevated },
+  slot: { flex: 1, alignItems: 'center', justifyContent: 'center', height: 64 },
+  circle: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  guideIdle: { backgroundColor: colors.primarySoft },
+  active: { backgroundColor: colors.primary, ...shadow.button },
 });

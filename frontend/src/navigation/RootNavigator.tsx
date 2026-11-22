@@ -1,184 +1,258 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NavigationContainer } from '@react-navigation/native';
+import { LinkingOptions, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import MatchProfileScreen from '../screens/Connections/MatchProfileScreen';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import * as Linking from 'expo-linking';
 import { useAuth } from '../context/AuthContext';
-import NotificationSettingsScreen from '../screens/Settings/NotificationSettingsScreen';
-import AIPrivacyScreen from '../screens/Settings/AIPrivacyScreen';
 import { colors } from '../theme';
-import LoginScreen from '../screens/Auth/LoginScreen';
-import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
-import BlockedUsersScreen from '../screens/Settings/BlockedUsersScreen';
-import ComingSoonScreen from '../screens/Settings/ComingSoonScreen';
-import PasswordSecurityScreen from '../screens/Settings/PasswordSecurityScreen';
-import AccountScreen from '../screens/Settings/AccountScreen';
-import FAQsScreen from '../screens/Settings/FAQsScreen';
+import { useLayout } from '../hooks/useLayout';
+import { WebShell } from '../layout/WebShell';
+import { LogoMark } from '../ui';
 import BottomTabBar from './BottomTabBar';
-import ChatSettingsScreen from '../screens/Settings/ChatSettingsScreen';
-import SettingsScreen from '../screens/Settings/SettingsScreen';
-import VerificationScreen from '../screens/Settings/VerificationScreen';
-import PrivacySafetyScreen from '../screens/Settings/PrivacyVisibilityScreen';
-import EditSectionScreen from '../screens/Profile/EditSectionScreen';
-import WelcomeScreen from '../screens/Auth/WelcomeScreen';
-import ReflectResultsScreen from '../screens/Journey/ReflectResultsScreen';
-import CreateAccountScreen from '../screens/Auth/CreateAccountScreen';
-import LanguageScreen from '../screens/Settings/LanguageScreen';
-import AppearanceScreen from '../screens/Settings/AppearanceScreen';
-import VerifyOtpScreen from '../screens/Auth/VerifyOtpScreen';
-import OnboardingBasicsScreen from '../screens/Auth/OnboardingBasicsScreen';
-import PrivacyVisibilityScreen from '../screens/Settings/PrivacyVisibilityScreen';
-import DiscoverySettingsScreen from '../screens/Settings/DiscoverySettingsScreen';
-import OnboardingLanguagesScreen from '../screens/Auth/OnboardingLanguagesScreen';
-import OnboardingPhotoScreen from '../screens/Auth/OnboardingPhotoScreen';
-import OnboardingSuccessScreen, { OPEN_BUILDER_KEY } from '../screens/Auth/OnboardingSuccessScreen';
-import ProfileBuilderScreen from '../screens/ProfileBuilder/ProfileBuilderScreen';
-import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
-import HomeScreen from '../screens/Tabs/HomeScreen';
-import ConnectionsScreen from '../screens/Tabs/ConnectionsScreen';
-import JourneyScreen from '../screens/Journey/JourneyScreen';
-import SetuGuideSettingsScreen from '../screens/Settings/SetuGuideSettingsScreen';
-import StageScreen from '../screens/Journey/StageScreen';
-import ReflectIntroScreen from '../screens/Journey/ReflectIntroScreen';
-import ChangePhoneScreen from '../screens/Settings/ChangePhoneScreen';
-import ChangeEmailScreen from '../screens/Settings/ChangeEmailScreen';
-import LocationSettingsScreen from '../screens/Settings/LocationSettingsScreen';
-import ManageAccountScreen from '../screens/Settings/ManageAccountScreen';
-import ReflectPrivacyScreen from '../screens/Journey/ReflectPrivacyScreen';
-import ChatThreadScreen from '../screens/Chats/ChatThreadScreen';
-import ChatProfileScreen from '../screens/Chats/ChatProfileScreen';
-import ReflectQuestionScreen from '../screens/Journey/ReflectQuestionScreen';
-import ReflectDoneScreen from '../screens/Journey/ReflectDoneScreen';
-import GuideChatScreen from '../screens/Guide/GuideChatScreen';
-import HelpScreen from '../screens/Settings/HelpScreen';
-import AboutScreen from '../screens/Settings/AboutScreen';
-import ChatsScreen from '../screens/Chats/ChatsScreen';
-import ChangePasswordScreen from '../screens/Settings/ChangePasswordScreen';
-import DevicesScreen from '../screens/Settings/DevicesScreen';
-import DeleteAccountScreen from '../screens/Settings/DeleteAccountScreen';
-import ProfileScreen from '../screens/Profile/ProfileScreen';
-import ProfileDetailScreen from '../screens/Profile/ProfileDetailScreen';
-import EditProfileScreen from '../screens/Profile/EditProfileScreen';
+import { navigationRef, syncCurrentRoute } from './navRef';
+
+import Landing from '../screens/public/Landing';
+import { ForgotPassword, Login, SignUp } from '../screens/public/Auth';
+import FamilyInvite from '../screens/public/FamilyInvite';
+import VerifyEmail from '../screens/onboarding/VerifyEmail';
+import { Onboarding, OnboardingDone } from '../screens/onboarding/Onboarding';
+import Home from '../screens/home/Home';
+import NotificationsScreen from '../screens/home/Notifications';
+import Connections from '../screens/connections/Connections';
+import PersonProfile from '../screens/connections/PersonProfile';
+import GuideHome from '../screens/journey/GuideHome';
+import { Journey, Stage } from '../screens/journey/Journey';
+import Reflect from '../screens/journey/Reflect';
+import GuideChat from '../screens/journey/GuideChat';
+import Chats from '../screens/chat/Chats';
+import { ChatProfile, ChatThread } from '../screens/chat/ChatThread';
+import { MyProfile, MyProfileTabs } from '../screens/profile/MyProfile';
+import { EditAbout, FamilyEdit, LifestyleEdit, PreferencesEdit, PreferencesReview, ProfileBuilder } from '../screens/profile/ProfileEditors';
+import { Settings } from '../screens/settings/SettingsHome';
+import { Info, Result, SettingOption } from '../screens/settings/Generic';
+import { Account, ChangeEmail, ChangePassword, ChangePhone, Deactivate, DeleteAccount, DownloadData, EditPersonal, EmailAddress, LocationSettings, Logout, ManageAccount, PasswordSecurity, PhoneNumber } from '../screens/settings/Account';
+import { BlockedUsers, PrivacyVisibility, ProfileSharing, ReportFlow, ReportSafety } from '../screens/settings/Privacy';
+import { FamilyAccess, FamilyAdd, FamilyInviteForm, FamilyMember } from '../screens/settings/FamilyAccess';
+import { Verification, VerificationFlow } from '../screens/settings/Verification';
+import { AIPrivacy, GuideAccess, GuideConversation, GuideHistory, GuideSettings, SensitiveTopics } from '../screens/settings/GuideSettings';
+import { ChatSettings, CustomChatPrefs, DiscoverySettings, NotificationSettings } from '../screens/settings/Preferences';
+import { About, ContactSupport, FAQDetail, FAQs, Help, ReportProblem, SafetyResources } from '../screens/settings/Help';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function MainTabs() {
   return (
-    <Tab.Navigator tabBar={(p) => <BottomTabBar {...p} />} screenOptions={{ headerShown: false }}>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Connections" component={ConnectionsScreen} />
-      <Tab.Screen name="Journey" component={JourneyScreen} />
-      <Tab.Screen name="Chats" component={ChatsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+    <Tab.Navigator tabBar={(p) => <BottomTabBar {...p} />} screenOptions={{ headerShown: false }} backBehavior="history">
+      <Tab.Screen name="Home" component={Home} options={{ title: 'Home' }} />
+      <Tab.Screen name="Connections" component={Connections} options={{ title: 'Connections' }} />
+      <Tab.Screen name="Guide" component={GuideHome} options={{ title: 'Setu Guide' }} />
+      <Tab.Screen name="Chats" component={Chats} options={{ title: 'Chat' }} />
+      <Tab.Screen name="Profile" component={MyProfile} options={{ title: 'My Profile' }} />
     </Tab.Navigator>
   );
 }
 
+const linking: LinkingOptions<any> = {
+  prefixes: [Linking.createURL('/'), 'https://sambandh-setu.vercel.app'],
+  config: {
+    screens: {
+      Landing: '',
+      Login: 'login',
+      SignUp: 'signup',
+      ForgotPassword: 'forgot-password',
+      FamilyInvite: 'family/invite/:token',
+      Info: 'info/:slug',
+      VerifyEmail: 'verify-email',
+      Onboarding: 'onboarding/:step?',
+      OnboardingDone: 'onboarding-complete',
+      Main: {
+        screens: { Home: 'home', Connections: 'connections/:tab?', Guide: 'guide', Chats: 'chats', Profile: 'profile' },
+      },
+      Notifications: 'notifications',
+      PersonProfile: 'people/:userId',
+      Journey: 'journey/:connectionId',
+      Stage: 'journey/:connectionId/stage/:stage',
+      Reflect: 'journey/:connectionId/reflect/:mode?',
+      GuideChat: 'guide/chat',
+      ChatThread: 'chats/:chatId',
+      ChatProfile: 'chats/:chatId/profile',
+      MyProfileTabs: 'profile/view/:tab?',
+      EditAbout: 'profile/edit',
+      LifestyleEdit: 'profile/lifestyle/:section',
+      PreferencesEdit: 'profile/preferences/:section',
+      PreferencesReview: 'profile/preferences-review',
+      FamilyEdit: 'profile/family',
+      ProfileBuilder: 'profile/builder/:step?',
+      Settings: 'settings',
+      SettingOption: 'settings/option/:key',
+      Result: 'done/:kind',
+      Account: 'settings/account',
+      EditPersonal: 'settings/account/personal',
+      PhoneNumber: 'settings/account/phone',
+      ChangePhone: 'settings/account/phone/change',
+      EmailAddress: 'settings/account/email',
+      ChangeEmail: 'settings/account/email/change',
+      LocationSettings: 'settings/account/location',
+      ManageAccount: 'settings/account/manage',
+      DownloadData: 'settings/account/download',
+      Deactivate: 'settings/account/deactivate',
+      DeleteAccount: 'settings/account/delete',
+      PasswordSecurity: 'settings/security',
+      ChangePassword: 'settings/security/password',
+      PrivacyVisibility: 'settings/privacy',
+      ProfileSharing: 'settings/privacy/sharing',
+      BlockedUsers: 'settings/privacy/blocked',
+      ReportSafety: 'settings/privacy/report',
+      ReportFlow: 'report',
+      FamilyAccess: 'settings/family',
+      FamilyAdd: 'settings/family/add',
+      FamilyInviteForm: 'settings/family/invite/:method',
+      FamilyMember: 'settings/family/:memberId',
+      Verification: 'settings/verification',
+      VerificationFlow: 'settings/verification/:type',
+      GuideSettings: 'settings/guide',
+      GuideAccess: 'settings/guide/access',
+      GuideHistory: 'settings/guide/history',
+      GuideConversation: 'settings/guide/history/:id',
+      SensitiveTopics: 'settings/guide/sensitive-topics',
+      AIPrivacy: 'settings/ai-privacy',
+      NotificationSettings: 'settings/notifications',
+      ChatSettings: 'settings/chat',
+      CustomChatPrefs: 'settings/chat/custom',
+      DiscoverySettings: 'settings/discovery',
+      Help: 'settings/help',
+      FAQs: 'settings/help/faqs',
+      FAQDetail: 'settings/help/faqs/:index',
+      ContactSupport: 'settings/help/contact',
+      ReportProblem: 'settings/help/problem',
+      SafetyResources: 'settings/help/safety',
+      About: 'settings/about',
+      Logout: 'logout',
+    },
+  },
+};
+
+const screen = { headerShown: false, animation: Platform.OS === 'web' ? ('none' as const) : ('default' as const) };
+
+function Splash() {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg, gap: 16 }}>
+      <LogoMark size={56} />
+      <ActivityIndicator color={colors.primary} />
+    </View>
+  );
+}
+
 export default function RootNavigator() {
-  const { user, loading } = useAuth();
-  // Where the signed-in stack opens: the profile builder right after onboarding, otherwise Home.
-  const [startRoute, setStartRoute] = useState<'Main' | 'ProfileBuilder' | null>(null);
+  const { ready, user, config } = useAuth();
+  const { wide } = useLayout();
+  if (!ready) return <Splash />;
 
-  useEffect(() => {
-    if (!user) {
-      setStartRoute(null);
-      return;
-    }
-    AsyncStorage.getItem(OPEN_BUILDER_KEY)
-      .then((v) => setStartRoute(v === '1' ? 'ProfileBuilder' : 'Main'))
-      .catch(() => setStartRoute('Main'));
-  }, [user]);
+  const needsEmail = !!user && config.emailCodes && !user.emailVerified;
+  const needsOnboarding = !!user && !user.onboardingCompleted;
+  const signedIn = !!user && !needsEmail && !needsOnboarding;
 
-  if (loading || (user && !startRoute)) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  const stack = (
+    <Stack.Navigator screenOptions={screen}>
+      {!user ? (
+        <>
+          <Stack.Screen name="Landing" component={Landing} options={{ title: 'Sambandh Setu: Find with purpose. Connect with trust.' }} />
+          <Stack.Screen name="Login" component={Login} options={{ title: 'Log in · Sambandh Setu' }} />
+          <Stack.Screen name="SignUp" component={SignUp} options={{ title: 'Create your account · Sambandh Setu' }} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPassword} options={{ title: 'Forgot password · Sambandh Setu' }} />
+        </>
+      ) : needsEmail ? (
+        <Stack.Screen name="VerifyEmail" component={VerifyEmail} options={{ title: 'Verify your email · Sambandh Setu' }} />
+      ) : needsOnboarding ? (
+        <>
+          <Stack.Screen name="Onboarding" component={Onboarding} options={{ title: 'Create your profile · Sambandh Setu' }} />
+          <Stack.Screen name="OnboardingDone" component={OnboardingDone} options={{ title: 'Profile completed · Sambandh Setu' }} />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="Main" component={MainTabs} options={{ title: 'Sambandh Setu' }} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+          <Stack.Screen name="PersonProfile" component={PersonProfile} options={{ title: 'Profile' }} />
+          <Stack.Screen name="Journey" component={Journey} options={{ title: 'Your Journey' }} />
+          <Stack.Screen name="Stage" component={Stage} options={{ title: 'Stage' }} />
+          <Stack.Screen name="Reflect" component={Reflect} options={{ title: 'Reflect' }} />
+          <Stack.Screen name="GuideChat" component={GuideChat} options={{ title: 'Chat with Setu Guide' }} />
+          <Stack.Screen name="ChatThread" component={ChatThread} options={{ title: 'Chat' }} />
+          <Stack.Screen name="ChatProfile" component={ChatProfile} options={{ title: 'Chat profile' }} />
+          <Stack.Screen name="MyProfileTabs" component={MyProfileTabs} options={{ title: 'My Profile' }} />
+          <Stack.Screen name="EditAbout" component={EditAbout} options={{ title: 'Edit Profile' }} />
+          <Stack.Screen name="LifestyleEdit" component={LifestyleEdit} options={{ title: 'Lifestyle' }} />
+          <Stack.Screen name="PreferencesEdit" component={PreferencesEdit} options={{ title: 'Partner Preferences' }} />
+          <Stack.Screen name="PreferencesReview" component={PreferencesReview} options={{ title: 'Review Preferences' }} />
+          <Stack.Screen name="FamilyEdit" component={FamilyEdit} options={{ title: 'Family Background' }} />
+          <Stack.Screen name="ProfileBuilder" component={ProfileBuilder} options={{ title: 'Build your profile' }} />
+          <Stack.Screen name="Settings" component={Settings} options={{ title: 'Settings' }} />
+          <Stack.Screen name="SettingOption" component={SettingOption} options={{ title: 'Settings' }} />
+          <Stack.Screen name="Result" component={Result} options={{ title: 'Sambandh Setu' }} />
+          <Stack.Screen name="Account" component={Account} options={{ title: 'Account' }} />
+          <Stack.Screen name="EditPersonal" component={EditPersonal} options={{ title: 'Edit Personal Information' }} />
+          <Stack.Screen name="PhoneNumber" component={PhoneNumber} options={{ title: 'Phone Number' }} />
+          <Stack.Screen name="ChangePhone" component={ChangePhone} options={{ title: 'Change Phone Number' }} />
+          <Stack.Screen name="EmailAddress" component={EmailAddress} options={{ title: 'Email Address' }} />
+          <Stack.Screen name="ChangeEmail" component={ChangeEmail} options={{ title: 'Change Email Address' }} />
+          <Stack.Screen name="LocationSettings" component={LocationSettings} options={{ title: 'Location' }} />
+          <Stack.Screen name="ManageAccount" component={ManageAccount} options={{ title: 'Manage Account' }} />
+          <Stack.Screen name="DownloadData" component={DownloadData} options={{ title: 'Download Your Data' }} />
+          <Stack.Screen name="Deactivate" component={Deactivate} options={{ title: 'Deactivate Account' }} />
+          <Stack.Screen name="DeleteAccount" component={DeleteAccount} options={{ title: 'Delete Account' }} />
+          <Stack.Screen name="PasswordSecurity" component={PasswordSecurity} options={{ title: 'Password & Security' }} />
+          <Stack.Screen name="ChangePassword" component={ChangePassword} options={{ title: 'Change Password' }} />
+          <Stack.Screen name="PrivacyVisibility" component={PrivacyVisibility} options={{ title: 'Privacy & Visibility' }} />
+          <Stack.Screen name="ProfileSharing" component={ProfileSharing} options={{ title: 'Profile Information Sharing' }} />
+          <Stack.Screen name="BlockedUsers" component={BlockedUsers} options={{ title: 'Blocked Users' }} />
+          <Stack.Screen name="ReportSafety" component={ReportSafety} options={{ title: 'Report & Safety' }} />
+          <Stack.Screen name="ReportFlow" component={ReportFlow} options={{ title: 'Report' }} />
+          <Stack.Screen name="FamilyAccess" component={FamilyAccess} options={{ title: 'Family Access' }} />
+          <Stack.Screen name="FamilyAdd" component={FamilyAdd} options={{ title: 'Add Family Member' }} />
+          <Stack.Screen name="FamilyInviteForm" component={FamilyInviteForm} options={{ title: 'Invite Family Member' }} />
+          <Stack.Screen name="FamilyMember" component={FamilyMember} options={{ title: 'Manage Access' }} />
+          <Stack.Screen name="Verification" component={Verification} options={{ title: 'Verification' }} />
+          <Stack.Screen name="VerificationFlow" component={VerificationFlow} options={{ title: 'Verification' }} />
+          <Stack.Screen name="GuideSettings" component={GuideSettings} options={{ title: 'Setu Guide Settings' }} />
+          <Stack.Screen name="GuideAccess" component={GuideAccess} options={{ title: 'What Setu Guide can access' }} />
+          <Stack.Screen name="GuideHistory" component={GuideHistory} options={{ title: 'AI Conversation History' }} />
+          <Stack.Screen name="GuideConversation" component={GuideConversation} options={{ title: 'Conversation' }} />
+          <Stack.Screen name="SensitiveTopics" component={SensitiveTopics} options={{ title: 'Sensitive Topics' }} />
+          <Stack.Screen name="AIPrivacy" component={AIPrivacy} options={{ title: 'AI & Privacy' }} />
+          <Stack.Screen name="NotificationSettings" component={NotificationSettings} options={{ title: 'Notifications' }} />
+          <Stack.Screen name="ChatSettings" component={ChatSettings} options={{ title: 'Chat Settings' }} />
+          <Stack.Screen name="CustomChatPrefs" component={CustomChatPrefs} options={{ title: 'Custom Preferences' }} />
+          <Stack.Screen name="DiscoverySettings" component={DiscoverySettings} options={{ title: 'Discovery Settings' }} />
+          <Stack.Screen name="Help" component={Help} options={{ title: 'Help & Support' }} />
+          <Stack.Screen name="FAQs" component={FAQs} options={{ title: 'FAQs' }} />
+          <Stack.Screen name="FAQDetail" component={FAQDetail} options={{ title: 'FAQ' }} />
+          <Stack.Screen name="ContactSupport" component={ContactSupport} options={{ title: 'Contact Support' }} />
+          <Stack.Screen name="ReportProblem" component={ReportProblem} options={{ title: 'Report a Problem' }} />
+          <Stack.Screen name="SafetyResources" component={SafetyResources} options={{ title: 'Safety Resources' }} />
+          <Stack.Screen name="About" component={About} options={{ title: 'About Sambandh Setu' }} />
+          <Stack.Screen name="Logout" component={Logout} options={{ title: 'Log Out' }} />
+        </>
+      )}
+      <Stack.Screen name="FamilyInvite" component={FamilyInvite} options={{ title: 'Family Access Invitation · Sambandh Setu' }} />
+      <Stack.Screen name="Info" component={Info} options={{ title: 'Sambandh Setu' }} />
+    </Stack.Navigator>
+  );
 
   return (
-   <NavigationContainer
-  onStateChange={() => {
-    // web only: drop focus from the screen we just left, so the browser doesn't warn about aria-hidden
-    if (Platform.OS === 'web') (globalThis as any).document?.activeElement?.blur?.();
-  }}
->
-  {user ? (
-    // Signed in
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={startRoute ?? 'Main'}>
-      <Stack.Screen name="Main" component={MainTabs} />
-      <Stack.Screen name="ProfileBuilder" component={ProfileBuilderScreen} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} />
-      <Stack.Screen name="Stage" component={StageScreen} />
-      <Stack.Screen name="ReflectIntro" component={ReflectIntroScreen} />
-      <Stack.Screen name="ReflectPrivacy" component={ReflectPrivacyScreen} />
-      <Stack.Screen name="ReflectQuestion" component={ReflectQuestionScreen} />
-      <Stack.Screen name="ReflectDone" component={ReflectDoneScreen} />
-      <Stack.Screen name="ReflectResults" component={ReflectResultsScreen} />
-      <Stack.Screen name="Guide" component={GuideChatScreen} />
-      {/* alias: some screens navigate to 'GuideChat'. Remove once every call uses 'Guide'. */}
-      <Stack.Screen name="GuideChat" component={GuideChatScreen} />
-      <Stack.Screen name="ChatThread" component={ChatThreadScreen} />
-      <Stack.Screen name="ChatProfile" component={ChatProfileScreen} />
-      <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="EditSection" component={EditSectionScreen} />
-      <Stack.Screen name="MatchProfile" component={MatchProfileScreen} />
-
-      {/* Settings and everything under it */}
-      <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="Verification" component={VerificationScreen} />
-      <Stack.Screen name="Account" component={AccountScreen} />
-      <Stack.Screen name="ManageAccount" component={ManageAccountScreen} />
-      <Stack.Screen name="ChangePhone" component={ChangePhoneScreen} />
-      <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
-      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-      <Stack.Screen name="PasswordSecurity" component={PasswordSecurityScreen} />
-      <Stack.Screen name="Devices" component={DevicesScreen} />
-      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
-      <Stack.Screen name="PrivacyVisibility" component={PrivacyVisibilityScreen} />
-      <Stack.Screen name="DiscoverySettings" component={DiscoverySettingsScreen} />
-      <Stack.Screen name="WhoCanFindMe" component={ComingSoonScreen} />
-      <Stack.Screen name="DistanceVisibility" component={ComingSoonScreen} />
-      <Stack.Screen name="AgeVisibility" component={ComingSoonScreen} />
-      <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
-      <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
-      <Stack.Screen name="SetuGuideSettings" component={SetuGuideSettingsScreen} />
-      <Stack.Screen name="AIPrivacy" component={AIPrivacyScreen} />
-      <Stack.Screen name="AIHistory" component={ComingSoonScreen} />
-      <Stack.Screen name="SensitiveTopics" component={ComingSoonScreen} />
-      <Stack.Screen name="DataUsage" component={ComingSoonScreen} />
-      <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
-      <Stack.Screen name="ReportChat" component={ComingSoonScreen} />
-      <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
-      <Stack.Screen name="Language" component={LanguageScreen} />
-      <Stack.Screen name="Appearance" component={AppearanceScreen} />
-      <Stack.Screen name="Help" component={HelpScreen} />
-      <Stack.Screen name="FAQs" component={FAQsScreen} />
-      <Stack.Screen name="SafetyResources" component={ComingSoonScreen} />
-      <Stack.Screen name="CommunityGuidelines" component={ComingSoonScreen} />
-      <Stack.Screen name="About" component={AboutScreen} />
-      <Stack.Screen name="OurStory" component={ComingSoonScreen} />
-      <Stack.Screen name="Licenses" component={ComingSoonScreen} />
-    </Stack.Navigator>
-  ) : (
-    // Signed out: Welcome -> phone -> OTP -> onboarding. The app always starts on Welcome.
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Welcome">
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
-      <Stack.Screen name="VerifyOtp" component={VerifyOtpScreen} />
-      <Stack.Screen name="OnboardingBasics" component={OnboardingBasicsScreen} />
-      <Stack.Screen name="OnboardingLanguages" component={OnboardingLanguagesScreen} />
-      <Stack.Screen name="OnboardingPhoto" component={OnboardingPhotoScreen} />
-      <Stack.Screen name="OnboardingSuccess" component={OnboardingSuccessScreen} />
-    </Stack.Navigator>
-  )}
-</NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linking}
+      onReady={syncCurrentRoute}
+      onStateChange={() => {
+        syncCurrentRoute();
+        if (Platform.OS === 'web') (globalThis as any).document?.activeElement?.blur?.();
+      }}
+      documentTitle={{ formatter: (options, route) => options?.title || route?.name || 'Sambandh Setu' }}
+      fallback={<Splash />}
+    >
+      {signedIn && wide ? <WebShell>{stack}</WebShell> : stack}
+    </NavigationContainer>
   );
 }

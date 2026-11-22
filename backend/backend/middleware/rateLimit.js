@@ -7,8 +7,8 @@ const HOUR_MS = 60 * MINUTE_MS;
 
 const DEFAULT_LIMITS = Object.freeze({
     global: { windowMs: 15 * MINUTE_MS, limit: 300 },
-    authIp: { windowMs: HOUR_MS, limit: 5 },
-    authEmail: { windowMs: HOUR_MS, limit: 5 }
+    authIp: { windowMs: 15 * MINUTE_MS, limit: 30 },
+    authEmail: { windowMs: 15 * MINUTE_MS, limit: 10 }
 });
 
 const positiveInt = (value, fallback) => {
@@ -98,7 +98,7 @@ const createUserRateLimiter = ({ windowMs = 60 * 1000, maxRequests = 20 } = {}) 
     const userRequests = new Map();
 
     return (req, res, next) => {
-        const userId = req.user?._id?.toString();
+        const userId = req.user?.id ? String(req.user.id) : undefined;
         if (!userId) return next(ApiError.unauthorized());
 
         const now = Date.now();
