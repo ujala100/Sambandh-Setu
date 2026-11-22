@@ -5,8 +5,10 @@ Error contract (identical shape for every failure):
 Rule: caller input is never echoed back into an error message or a log line,
 so details are built from schema field names and Pydantic error type codes only.
 """
+import hmac
 import json
 import logging
+import os
 import time
 import traceback
 import uuid
@@ -40,14 +42,23 @@ app = FastAPI(
     description="Stage-aware Setu Guide assistant. POST /v1/guide/chat, GET /health.",
 )
 
-# Allow all origins for seamless development and multi-cloud deployment (Vercel, Render)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The Guide is called server-to-server by the Express API, never from browsers, so CORS is closed
+# unless GUIDE_ALLOWED_ORIGINS lists origins explicitly.
+_origins = [o.strip() for o in os.environ.get("GUIDE_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["POST", "GET"], allow_headers=["content-type", "x-guide-key"])
+
+# Shared secret between the Express API and this service (audit: the service was public).
+_GUIDE_KEY = os.environ.get("GUIDE_SERVICE_KEY", "")
+
+
+@app.middleware("http")
+async def require_guide_key(request: Request, call_next):
+    if _GUIDE_KEY and request.url.path.startswith("/v1/"):
+        given = request.headers.get("x-guide-key", "")
+        if not hmac.compare_digest(given.encode(), _GUIDE_KEY.encode()):
+            return JSONResponse(status_code=401, content=_error("unauthorized", "Missing or invalid credentials."))
+    return await call_next(request)
 
 # Only these names may appear in error details. Anything else in an error path
 # (e.g. a key the caller put inside `context`) is dropped, so no user text can

@@ -1,57 +1,73 @@
+/**
+ * Outgoing email (Brevo). Email is optional: when it is not configured, features that need it
+ * report `EMAIL_UNAVAILABLE` instead of pretending a message was sent.
+ *
+ * Local development can set EMAIL_PROVIDER=console to print messages to the server log.
+ * The console provider is refused in production.
+ */
+const provider = () => String(process.env.EMAIL_PROVIDER || "").toLowerCase();
 
-const sendOtpEmail = async (to, code) => {
-    if (!to || !code) {
-        throw new Error("OTP email details are missing");
+const isEmailConfigured = () => {
+    if (provider() === "brevo") return Boolean(process.env.EMAIL_API_KEY && process.env.EMAIL_FROM);
+    if (provider() === "console") return process.env.NODE_ENV !== "production";
+    return false;
+};
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const sendEmail = async ({ to, subject, text, html }) => {
+    if (!isEmailConfigured()) {
+        const error = new Error("Email is not configured");
+        error.code = "EMAIL_UNAVAILABLE";
+        throw error;
     }
-
-    const provider = process.env.EMAIL_PROVIDER ||
-        (process.env.NODE_ENV === "development" ? "placeholder" : "brevo");
-
-    if (provider === "placeholder") {
-        console.info("OTP email placeholder provider invoked.");
+    if (provider() === "console") {
+        console.info(`[email:console] to=${to} subject="${subject}"\n${text}`);
         return;
     }
-
-    if (provider !== "brevo") {
-        throw new Error("Unsupported email provider");
-    }
-
-    const apiKey = process.env.EMAIL_API_KEY;
-    const senderEmail = process.env.EMAIL_FROM;
-    const senderName = process.env.EMAIL_FROM_NAME || "Sambandh Setu";
-
-    if (!apiKey || !senderEmail) {
-        throw new Error("Brevo email configuration is incomplete");
-    }
-
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
-        headers: {
-            "accept": "application/json",
-            "api-key": apiKey,
-            "content-type": "application/json"
-        },
+        headers: { accept: "application/json", "api-key": process.env.EMAIL_API_KEY, "content-type": "application/json" },
         body: JSON.stringify({
-            sender: {
-                name: senderName,
-                email: senderEmail
-            },
+            sender: { name: process.env.EMAIL_FROM_NAME || "Sambandh Setu", email: process.env.EMAIL_FROM },
             to: [{ email: to }],
-            subject: "Your Sambandh Setu verification code",
-            textContent: `Your Sambandh Setu verification code is ${code}. It expires in 10 minutes.`,
-            htmlContent: `<p>Your Sambandh Setu verification code is:</p><h2>${code}</h2><p>This code expires in 10 minutes.</p>`
+            subject,
+            textContent: text,
+            htmlContent: html || `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`
         }),
         signal: AbortSignal.timeout(10000)
     });
-
     if (!response.ok) {
-        // Do not log provider response, email address, or credentials.
-        console.error("OTP email provider failed", {
-            status: response.status
-        });
-
-        throw new Error("OTP email could not be sent");
+        // Never log the address, body or provider response.
+        console.error("Email provider failed: status=%s", response.status);
+        const error = new Error("Email could not be sent");
+        error.code = "EMAIL_SEND_FAILED";
+        throw error;
     }
 };
 
-module.exports = { sendOtpEmail };
+const PURPOSE_TEXT = {
+    signup: "confirm your email address",
+    login: "sign in",
+    reset: "reset your password",
+    change_email: "confirm your new email address",
+    delete_account: "confirm that you want to delete your account"
+};
+
+const sendOtpEmail = (to, code, purpose = "signup") => {
+    const action = PURPOSE_TEXT[purpose] || "continue";
+    return sendEmail({
+        to,
+        subject: "Your Sambandh Setu verification code",
+        text: `Use ${code} to ${action} on Sambandh Setu. The code expires in 10 minutes.\n\nIf you did not ask for this, you can ignore this email.`,
+        html: `<p>Use this code to ${escapeHtml(action)} on Sambandh Setu:</p><h2 style="letter-spacing:4px">${code}</h2><p>The code expires in 10 minutes. If you did not ask for this, you can ignore this email.</p>`
+    });
+};
+
+const sendFamilyInviteEmail = (to, { inviterName, relationship, link, message }) => sendEmail({
+    to,
+    subject: `${inviterName} invited you to Sambandh Setu`,
+    text: `${inviterName} has invited you, as their ${relationship.toLowerCase()}, to view selected parts of their Sambandh Setu profile.\n\n${message ? `Their note: "${message}"\n\n` : ""}Open the invitation: ${link}\n\nYou can accept or decline on that page.`
+});
+
+module.exports = { isEmailConfigured, sendEmail, sendOtpEmail, sendFamilyInviteEmail };

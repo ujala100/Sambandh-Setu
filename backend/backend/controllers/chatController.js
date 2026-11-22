@@ -1,204 +1,130 @@
-const Chat = require("../models/Chat");
-const Connection = require("../models/Connection");
-const Message = require("../models/Message");
-const User = require("../models/User");
-const Profile = require("../models/Profile");
+/**
+ * One-to-one chats between connected members. A chat exists for every connection; messages can only
+ * be sent while the connection is active and neither person has blocked the other.
+ */
+const { getDb, generateId, nowIso } = require("../db");
+const Users = require("../models/users");
+const Settings = require("../models/settings");
+const Access = require("../services/access");
+const J = require("../services/journey");
+const { notify } = require("../services/notify");
+const { cardFor, otherId } = require("./connectionController");
 const ApiError = require("../utils/ApiError");
-const { getConnectionForUser } = require("../services/connectionAccessService");
-const { requireObjectId, requireString } = require("../utils/validation");
-const { serializeUser } = require("../utils/serializers");
+const H = require("../utils/helpers");
 
-const PAGE_SIZE = 30;
-const CHAT_FILTERS = new Set(["all", "active", "new", "muted"]);
-
-const ensureChats = async (connections) => {
-    for (const connection of connections) {
-        try {
-            await Chat.updateOne(
-                { connection: connection._id },
-                { $setOnInsert: { connection: connection._id } },
-                { upsert: true, setDefaultsOnInsert: true }
-            );
-        } catch (error) {
-            if (error.code !== 11000) {
-                throw error;
-            }
-        }
-    }
-};
-
-const serializeMessage = (message, userId) => ({
-    id: String(message._id),
-    senderId: String(message.sender),
-    text: message.text,
-    createdAt: message.createdAt,
-    isReadByMe: message.readBy.some((reader) => String(reader) === String(userId))
-});
-
-const getAuthorizedChat = async (chatId, userId) => {
-    const id = requireObjectId(chatId, "chatId");
-    const chat = await Chat.findById(id);
-    if (!chat) {
-        throw ApiError.notFound("Chat not found");
-    }
-    const connection = await getConnectionForUser(chat.connection, userId);
-    if (connection.status !== "active") {
-        throw ApiError.notFound("Chat not found");
-    }
-    return { chat, connection };
+const loadChat = async (req) => {
+    const id = H.id(req.params.chatId, "chatId");
+    const db = getDb();
+    const chat = await db.prepare("SELECT * FROM chats WHERE id = ?").get(id);
+    if (!chat) throw ApiError.notFound("Chat not found");
+    const conn = await db.prepare("SELECT * FROM connections WHERE id = ?").get(chat.connection_id);
+    if (!conn || (conn.participant_a !== req.user.id && conn.participant_b !== req.user.id)) throw ApiError.notFound("Chat not found");
+    const partnerId = otherId(conn, req.user.id);
+    if (await Access.isBlockedEitherWay(req.user.id, partnerId)) throw ApiError.notFound("Chat not found");
+    return { chat, conn, partnerId };
 };
 
 const listChats = async (req, res) => {
-    const filter = req.query.filter || "all";
-    if (!CHAT_FILTERS.has(filter)) {
-        throw ApiError.badRequest("filter must be all, active, new, or muted", [{ field: "filter" }]);
+    const db = getDb();
+    const conns = await db.prepare("SELECT * FROM connections WHERE (participant_a = ? OR participant_b = ?) AND status <> 'closed'").all(req.user.id, req.user.id);
+    const blocked = await Access.blockedIdsFor(req.user.id);
+    const items = [];
+    for (const conn of conns) {
+        const partnerId = otherId(conn, req.user.id);
+        if (blocked.has(partnerId)) continue;
+        const chat = await db.prepare("SELECT * FROM chats WHERE connection_id = ?").get(conn.id);
+        if (!chat) continue;
+        const person = await cardFor(req.user, partnerId);
+        if (!person) continue;
+        const last = await db.prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").get(chat.id);
+        const unread = (await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND sender_id <> ? AND read_at IS NULL").get(chat.id, req.user.id)).n;
+        items.push({
+            id: chat.id,
+            connectionId: conn.id,
+            connectionStatus: conn.status,
+            stage: conn.stage,
+            stageTitle: J.STAGES.find((s) => s.key === conn.stage)?.title || "",
+            person,
+            lastMessage: last ? { text: last.text, at: last.created_at, mine: last.sender_id === req.user.id, read: Boolean(last.read_at) } : null,
+            unread,
+            muted: H.parseJson(chat.muted_by, []).includes(req.user.id),
+            createdAt: chat.created_at
+        });
     }
-
-    const connections = await Connection.find({
-        participants: req.user._id,
-        status: "active"
-    })
-        .populate("participants", "username firstName lastName")
-        .sort({ updatedAt: -1 });
-    await ensureChats(connections);
-
-    const chats = await Chat.find({
-        connection: { $in: connections.map(({ _id }) => _id) }
-    }).lean();
-    if (chats.length === 0) {
-        return res.json({ data: { chats: [] } });
-    }
-
-    const chatIds = chats.map(({ _id }) => _id);
-    const unreadCounts = await Message.aggregate([
-        {
-            $match: {
-                chat: { $in: chatIds },
-                sender: { $ne: req.user._id },
-                readBy: { $ne: req.user._id }
-            }
-        },
-        { $group: { _id: "$chat", count: { $sum: 1 } } }
-    ]);
-    const unreadByChat = new Map(unreadCounts.map(({ _id, count }) => [String(_id), count]));
-    const chatByConnection = new Map(chats.map((chat) => [String(chat.connection), chat]));
-
-    let results = connections.map((connection) => {
-        const chat = chatByConnection.get(String(connection._id));
-        const match = connection.participants.find(
-            (participant) => String(participant._id) !== String(req.user._id)
-        );
-        const unreadCount = unreadByChat.get(String(chat._id)) || 0;
-        const muted = chat.mutedBy.some((userId) => String(userId) === String(req.user._id));
-        return {
-            id: String(chat._id),
-            connectionId: String(connection._id),
-            participant: serializeUser(match),
-            stage: connection.stage,
-            muted,
-            unreadCount,
-            lastMessageAt: chat.lastMessageAt || null
-        };
-    });
-
-    if (filter === "active") {
-        results = results.filter(({ muted }) => !muted);
-    } else if (filter === "muted") {
-        results = results.filter(({ muted }) => muted);
-    } else if (filter === "new") {
-        results = results.filter(({ unreadCount }) => unreadCount > 0);
-    }
-
-    res.json({ data: { chats: results } });
+    items.sort((a, b) => String(b.lastMessage?.at || b.createdAt).localeCompare(String(a.lastMessage?.at || a.createdAt)));
+    H.ok(res, { items });
 };
 
 const listMessages = async (req, res) => {
-    const { chat } = await getAuthorizedChat(req.params.chatId, req.user._id);
-    const query = { chat: chat._id };
-    if (req.query.cursor !== undefined) {
-        query._id = { $lt: requireObjectId(req.query.cursor, "cursor") };
-    }
-
-    const messages = await Message.find(query).sort({ _id: -1 }).limit(PAGE_SIZE + 1).lean();
-    const hasMore = messages.length > PAGE_SIZE;
-    const page = messages.slice(0, PAGE_SIZE);
-    const nextCursor = hasMore ? String(page[page.length - 1]._id) : null;
-
-    res.json({
-        data: {
-            messages: page.reverse().map((message) => serializeMessage(message, req.user._id)),
-            nextCursor
-        }
-    });
+    const { chat, partnerId } = await loadChat(req);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+    const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? req.query.before : null;
+    const rows = before
+        ? await getDb().prepare("SELECT * FROM messages WHERE chat_id = ? AND created_at < ? ORDER BY created_at DESC, id DESC LIMIT ?").all(chat.id, before, limit)
+        : await getDb().prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT ?").all(chat.id, limit);
+    const partnerSettings = await Settings.getSettings(partnerId);
+    const mySettings = await Settings.getSettings(req.user.id);
+    // Read receipts are shown only when both people have them switched on.
+    const showRead = partnerSettings.chat.readReceipts && mySettings.chat.readReceipts;
+    const items = rows.reverse().map((m) => ({
+        id: m.id, text: m.text, at: m.created_at, mine: m.sender_id === req.user.id,
+        read: showRead && m.sender_id === req.user.id ? Boolean(m.read_at) : undefined
+    }));
+    H.ok(res, { items, hasMore: rows.length === limit });
 };
 
 const sendMessage = async (req, res) => {
-    const { chat } = await getAuthorizedChat(req.params.chatId, req.user._id);
-    const text = requireString(req.body?.text, "text", { maxLength: 2000 });
-    const message = await Message.create({
-        chat: chat._id,
-        sender: req.user._id,
-        text,
-        readBy: [req.user._id]
-    });
-    await Chat.updateOne({ _id: chat._id }, { $max: { lastMessageAt: message.createdAt } });
-
-    res.status(201).json({ data: { message: serializeMessage(message, req.user._id) } });
+    const { chat, conn, partnerId } = await loadChat(req);
+    if (conn.status !== "active") throw ApiError.conflict(conn.status === "paused" ? "This connection is paused. Resume it to send messages." : "This connection is closed");
+    const text = H.str(req.body?.text, "text", { max: 2000 });
+    const now = nowIso();
+    const id = generateId();
+    const db = getDb();
+    await db.prepare("INSERT INTO messages (id, chat_id, sender_id, text, created_at) VALUES (?, ?, ?, ?, ?)").run(id, chat.id, req.user.id, text, now);
+    await db.prepare("UPDATE chats SET last_message_at = ? WHERE id = ?").run(now, chat.id);
+    if (!H.parseJson(chat.muted_by, []).includes(partnerId)) {
+        await notify(partnerId, { actorId: req.user.id, type: "message", refId: chat.id });
+    }
+    H.ok(res, { id, text, at: now, mine: true }, 201);
 };
 
-const markMessagesRead = async (req, res) => {
-    const { chat } = await getAuthorizedChat(req.params.chatId, req.user._id);
-    const result = await Message.updateMany(
-        {
-            chat: chat._id,
-            sender: { $ne: req.user._id },
-            readBy: { $ne: req.user._id }
-        },
-        { $addToSet: { readBy: req.user._id } }
-    );
-    res.json({ data: { markedRead: result.modifiedCount } });
+const markRead = async (req, res) => {
+    const { chat } = await loadChat(req);
+    await getDb().prepare("UPDATE messages SET read_at = ? WHERE chat_id = ? AND sender_id <> ? AND read_at IS NULL").run(nowIso(), chat.id, req.user.id);
+    await getDb().prepare("UPDATE notifications SET read_at = ? WHERE recipient_id = ? AND type = 'message' AND ref_id = ? AND read_at IS NULL").run(nowIso(), req.user.id, chat.id);
+    H.ok(res, { read: true });
 };
 
 const setMuted = async (req, res) => {
-    const { chat } = await getAuthorizedChat(req.params.chatId, req.user._id);
-    if (typeof req.body?.muted !== "boolean" || Object.keys(req.body).length !== 1) {
-        throw ApiError.badRequest("muted must be a boolean", [{ field: "muted" }]);
-    }
-    await Chat.updateOne(
-        { _id: chat._id },
-        req.body.muted
-            ? { $addToSet: { mutedBy: req.user._id } }
-            : { $pull: { mutedBy: req.user._id } }
-    );
-    res.json({ data: { chatId: String(chat._id), muted: req.body.muted } });
+    const { chat } = await loadChat(req);
+    const muted = req.body?.muted === true;
+    const list = new Set(H.parseJson(chat.muted_by, []));
+    if (muted) list.add(req.user.id); else list.delete(req.user.id);
+    await getDb().prepare("UPDATE chats SET muted_by = ? WHERE id = ?").run(JSON.stringify([...list]), chat.id);
+    H.ok(res, { muted });
 };
 
-const getChatProfile = async (req, res) => {
-    const { chat, connection } = await getAuthorizedChat(req.params.chatId, req.user._id);
-    const otherUserId = connection.participants.find((p) => String(p._id || p) !== String(req.user._id));
-    const [otherUser, otherProfile] = await Promise.all([
-        User.findById(otherUserId),
-        Profile.findOne({ user: otherUserId })
-    ]);
-    if (!otherUser) {
-        throw ApiError.notFound("User not found");
-    }
-    const name = otherUser.displayName || [otherUser.firstName, otherUser.lastName].filter(Boolean).join(" ") || otherUser.username;
-    res.json({
-        data: {
-            id: String(chat._id),
-            name,
-            age: otherProfile?.age || 28,
-            role: otherProfile?.profession || "Professional",
-            city: otherProfile?.lifestyle?.routine ? "Bengaluru" : "India",
-            photo: otherProfile?.avatarUrl,
-            online: true,
-            muted: chat.mutedBy?.some((u) => String(u) === String(req.user._id)) || false,
-            journey: { stage: connection.stage || "connect" },
-            interests: otherProfile?.interests || ["Travel", "Books"],
-            media: { total: 0, thumbs: [] }
-        }
+const chatProfile = async (req, res) => {
+    const { chat, conn, partnerId } = await loadChat(req);
+    const person = await cardFor(req.user, partnerId);
+    const mine = Users.expandProfile(await Users.getProfile(req.user.id));
+    const theirs = Users.expandProfile(await Users.getProfile(partnerId));
+    const lower = new Set((mine.interests || []).map((x) => x.toLowerCase()));
+    const shared = (theirs.interests || []).filter((x) => lower.has(x.toLowerCase()));
+    const partner = await Users.findById(partnerId);
+    const partnerSettings = await Settings.getSettings(partnerId);
+    H.ok(res, {
+        chatId: chat.id,
+        connectionId: conn.id,
+        connectionStatus: conn.status,
+        person,
+        stage: conn.stage,
+        stageTitle: J.STAGES.find((s) => s.key === conn.stage)?.title || "",
+        connectedOn: conn.created_at,
+        lastActive: partnerSettings.privacy.showOnlineStatus ? partner.last_active_at : null,
+        sharedInterests: shared,
+        muted: H.parseJson(chat.muted_by, []).includes(req.user.id)
     });
 };
 
-module.exports = { listChats, listMessages, sendMessage, markMessagesRead, setMuted, getChatProfile };
+module.exports = { listChats, listMessages, sendMessage, markRead, setMuted, chatProfile };

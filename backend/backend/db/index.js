@@ -1,30 +1,34 @@
+/**
+ * Database access for Sambandh Setu.
+ *
+ * One small adapter with the same API over two engines:
+ *   - PostgreSQL (Neon / any Postgres) when DATABASE_URL is a postgres:// URL. Used in production.
+ *   - SQLite (node:sqlite) for local development and tests.
+ *
+ * Every query goes through `db.prepare(sql).get|all|run(...params)` with `?` placeholders.
+ * The Postgres adapter rewrites `?` to `$1..$n`, so SQL must never contain a literal `?`.
+ * Always `await` the calls: they return promises on Postgres and plain values on SQLite.
+ */
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
-const { DatabaseSync } = require("node:sqlite");
-const { Pool, types } = require("pg");
-
-// Parse Postgres BIGINT (type 20) as regular JavaScript numbers (for COUNT(*) etc.)
-types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
 
 let dbInstance = null;
 let currentDbTarget = null;
-let pgPoolInstance = null;
+let readyPromise = null;
 
 const generateId = () => crypto.randomBytes(12).toString("hex");
+const nowIso = () => new Date().toISOString();
 
-const isPostgresUrl = (url) => {
-    if (!url || typeof url !== "string") return false;
-    return url.startsWith("postgres://") || url.startsWith("postgresql://");
+const isPostgresUrl = (url) =>
+    typeof url === "string" && (url.startsWith("postgres://") || url.startsWith("postgresql://"));
+
+const toPgSql = (sql) => {
+    let idx = 0;
+    return sql.replace(/\?/g, () => `$${++idx}`);
 };
 
-function toPgSql(sql) {
-    let idx = 1;
-    let pgSql = sql.replace(/\?/g, () => `$${idx++}`);
-    // Convert SQLite COLLATE NOCASE to Postgres ILIKE
-    pgSql = pgSql.replace(/LIKE\s+(\$\d+)\s+COLLATE\s+NOCASE/gi, (_, p1) => `ILIKE ${p1}`);
-    return pgSql;
-}
+const clean = (params) => params.map((p) => (p === undefined ? null : typeof p === "boolean" ? (p ? 1 : 0) : p));
 
 function createPgAdapter(pool) {
     return {
@@ -34,26 +38,23 @@ function createPgAdapter(pool) {
             const pgSql = toPgSql(sql);
             return {
                 async get(...params) {
-                    const safeParams = params.map(p => (p === undefined ? null : p));
-                    const res = await pool.query(pgSql, safeParams);
+                    const res = await pool.query(pgSql, clean(params));
                     return res.rows[0] || null;
                 },
                 async all(...params) {
-                    const safeParams = params.map(p => (p === undefined ? null : p));
-                    const res = await pool.query(pgSql, safeParams);
+                    const res = await pool.query(pgSql, clean(params));
                     return res.rows;
                 },
                 async run(...params) {
-                    const safeParams = params.map(p => (p === undefined ? null : p));
-                    const res = await pool.query(pgSql, safeParams);
+                    const res = await pool.query(pgSql, clean(params));
                     return { changes: res.rowCount };
                 }
             };
         },
-        async exec(sql) {
+        exec(sql) {
             return pool.query(sql);
         },
-        async close() {
+        close() {
             return pool.end();
         }
     };
@@ -66,15 +67,9 @@ function createSqliteAdapter(sqliteDb) {
         prepare(sql) {
             const stmt = sqliteDb.prepare(sql);
             return {
-                get(...params) {
-                    return stmt.get(...params);
-                },
-                all(...params) {
-                    return stmt.all(...params);
-                },
-                run(...params) {
-                    return stmt.run(...params);
-                }
+                get: (...params) => stmt.get(...clean(params)) || null,
+                all: (...params) => stmt.all(...clean(params)),
+                run: (...params) => stmt.run(...clean(params))
             };
         },
         exec(sql) {
@@ -86,303 +81,379 @@ function createSqliteAdapter(sqliteDb) {
     };
 }
 
+// Schema. Portable SQL: TEXT ids, ISO-8601 TEXT timestamps, INTEGER booleans, JSON stored as TEXT.
+const TABLES = [
+    "admin_audit", "guide_messages", "guide_conversations", "data_requests", "support_tickets",
+    "verifications", "family_members", "reports", "blocks", "skips", "bookmarks", "photos",
+    "user_settings", "stage_completions", "reflection_answers", "notifications", "messages", "chats",
+    "connection_requests", "connections", "otps", "profiles", "users"
+];
+
 const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    username TEXT UNIQUE,
+    username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
-    display_name TEXT DEFAULT '',
-    first_name TEXT DEFAULT '',
-    last_name TEXT DEFAULT '',
+    phone TEXT,
+    display_name TEXT NOT NULL DEFAULT '',
     password_hash TEXT,
-    is_seeded INTEGER DEFAULT 0,
-    onboarding_completed INTEGER DEFAULT 0,
-    sharing_default TEXT DEFAULT 'keep_private',
-    is_active INTEGER DEFAULT 1,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    phone_verified INTEGER NOT NULL DEFAULT 0,
+    onboarding_completed INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    token_version INTEGER NOT NULL DEFAULT 0,
+    is_seeded INTEGER NOT NULL DEFAULT 0,
+    last_active_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 CREATE TABLE IF NOT EXISTS profiles (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL UNIQUE,
-    age INTEGER NOT NULL,
-    gender TEXT NOT NULL,
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    date_of_birth TEXT,
+    gender TEXT NOT NULL DEFAULT '',
     height_cm INTEGER,
-    avatar_url TEXT DEFAULT '',
-    profile_status TEXT DEFAULT 'active',
-    bio TEXT DEFAULT '',
-    education TEXT DEFAULT '',
-    profession TEXT DEFAULT '',
-    location TEXT DEFAULT '',
-    interests TEXT DEFAULT '[]',
-    lifestyle TEXT DEFAULT '{}',
-    family TEXT DEFAULT '{}',
-    preferences TEXT DEFAULT '{}',
-    builder_answers TEXT DEFAULT '{}',
-    sections TEXT DEFAULT '{}',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    marital_status TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    education TEXT NOT NULL DEFAULT '',
+    profession TEXT NOT NULL DEFAULT '',
+    bio TEXT NOT NULL DEFAULT '',
+    intent TEXT NOT NULL DEFAULT '',
+    avatar_photo_id TEXT,
+    profile_status TEXT NOT NULL DEFAULT 'active',
+    languages TEXT NOT NULL DEFAULT '[]',
+    interests TEXT NOT NULL DEFAULT '[]',
+    values_list TEXT NOT NULL DEFAULT '[]',
+    lifestyle TEXT NOT NULL DEFAULT '{}',
+    family TEXT NOT NULL DEFAULT '{}',
+    preferences TEXT NOT NULL DEFAULT '{}',
+    communication TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
 
-CREATE TABLE IF NOT EXISTS connections (
+CREATE TABLE IF NOT EXISTS photos (
     id TEXT PRIMARY KEY,
-    participant_a TEXT NOT NULL,
-    participant_b TEXT NOT NULL,
-    pair_key TEXT NOT NULL UNIQUE,
-    request_id TEXT,
-    status TEXT NOT NULL DEFAULT 'active',
-    stage TEXT NOT NULL DEFAULT 'connect',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(participant_a) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(participant_b) REFERENCES users(id) ON DELETE CASCADE
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_connections_pair ON connections(pair_key);
+CREATE INDEX IF NOT EXISTS idx_photos_user ON photos(user_id, kind);
 
-CREATE TABLE IF NOT EXISTS connection_requests (
-    id TEXT PRIMARY KEY,
-    sender_id TEXT NOT NULL,
-    recipient_id TEXT NOT NULL,
-    pair_key TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_connection_requests_pair ON connection_requests(pair_key);
-CREATE INDEX IF NOT EXISTS idx_connection_requests_recipient ON connection_requests(recipient_id);
-CREATE INDEX IF NOT EXISTS idx_connection_requests_sender ON connection_requests(sender_id);
-
-CREATE TABLE IF NOT EXISTS chats (
-    id TEXT PRIMARY KEY,
-    connection_id TEXT NOT NULL UNIQUE,
-    muted_by TEXT DEFAULT '[]',
-    last_message_at TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(connection_id) REFERENCES connections(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_chats_connection ON chats(connection_id);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    chat_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    text TEXT NOT NULL,
-    read_by TEXT DEFAULT '[]',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
-    FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id TEXT PRIMARY KEY,
-    recipient_id TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    type TEXT NOT NULL,
-    request_id TEXT,
-    connection_id TEXT,
-    read_at TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id);
 
 CREATE TABLE IF NOT EXISTS otps (
     id TEXT PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
+    subject TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    target TEXT NOT NULL,
     code_hash TEXT NOT NULL,
-    attempts INTEGER DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
     last_sent_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     locked_until TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    UNIQUE (subject, purpose)
 );
-CREATE INDEX IF NOT EXISTS idx_otps_email ON otps(email);
 
-CREATE TABLE IF NOT EXISTS reflection_questions (
+CREATE TABLE IF NOT EXISTS connection_requests (
     id TEXT PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    order_num INTEGER NOT NULL UNIQUE,
-    category TEXT NOT NULL,
-    prompt TEXT NOT NULL,
-    type TEXT NOT NULL,
-    options TEXT DEFAULT '[]',
-    min_selections INTEGER,
-    max_selections INTEGER,
-    allow_other INTEGER DEFAULT 0,
-    other_text_max_length INTEGER DEFAULT 100,
-    min_rating INTEGER DEFAULT 1,
-    max_rating INTEGER DEFAULT 5,
-    max_length INTEGER DEFAULT 500,
-    is_mock INTEGER DEFAULT 1,
+    sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pair_key TEXT NOT NULL,
+    message TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_requests_recipient ON connection_requests(recipient_id, status);
+CREATE INDEX IF NOT EXISTS idx_requests_sender ON connection_requests(sender_id, status);
+CREATE INDEX IF NOT EXISTS idx_requests_pair ON connection_requests(pair_key, status);
+
+CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY,
+    participant_a TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    participant_b TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pair_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'active',
+    stage TEXT NOT NULL DEFAULT 'connect',
+    paused_by TEXT,
+    paused_at TEXT,
+    closed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_connections_a ON connections(participant_a);
+CREATE INDEX IF NOT EXISTS idx_connections_b ON connections(participant_b);
+
+CREATE TABLE IF NOT EXISTS stage_completions (
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (connection_id, stage, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS reflection_answers (
-    id TEXT PRIMARY KEY,
-    connection_id TEXT NOT NULL,
-    author_id TEXT NOT NULL,
-    question_id TEXT NOT NULL,
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    question_key TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'reflect',
     value TEXT NOT NULL,
-    other_text TEXT,
-    sharing TEXT DEFAULT 'keep_private',
-    created_at TEXT NOT NULL,
+    other_text TEXT NOT NULL DEFAULT '',
+    sharing TEXT NOT NULL DEFAULT 'keep_private',
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(connection_id) REFERENCES connections(id) ON DELETE CASCADE,
-    FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(question_id) REFERENCES reflection_questions(id) ON DELETE CASCADE
+    PRIMARY KEY (connection_id, author_id, stage, question_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_refl_ans ON reflection_answers(connection_id, author_id, question_id);
 
-CREATE TABLE IF NOT EXISTS stage_contents (
+CREATE TABLE IF NOT EXISTS chats (
     id TEXT PRIMARY KEY,
-    stage TEXT NOT NULL UNIQUE,
-    guidance TEXT NOT NULL DEFAULT '[]',
-    for_you TEXT DEFAULT '[]',
-    activities TEXT DEFAULT '[]',
-    resources TEXT DEFAULT '[]',
-    is_mock INTEGER DEFAULT 1,
+    connection_id TEXT NOT NULL UNIQUE REFERENCES connections(id) ON DELETE CASCADE,
+    muted_by TEXT NOT NULL DEFAULT '[]',
+    last_message_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, created_at);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    ref_id TEXT,
+    payload TEXT NOT NULL DEFAULT '{}',
+    read_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, created_at);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS skips (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    blocker_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (blocker_id, blocked_id)
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reported_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    content_type TEXT NOT NULL DEFAULT 'user',
+    content_ref TEXT,
+    reason TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    photo_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS family_members (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    relationship TEXT NOT NULL,
+    method TEXT NOT NULL,
+    contact TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    token_hash TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    permissions TEXT NOT NULL DEFAULT '{}',
+    accepted_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_family_owner ON family_members(owner_id);
+
+CREATE TABLE IF NOT EXISTS verifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    doc_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'in_review',
+    details TEXT NOT NULL DEFAULT '{}',
+    photo_ids TEXT NOT NULL DEFAULT '[]',
+    reviewer_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_verifications_user ON verifications(user_id);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    category TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS data_requests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'ready',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS guide_conversations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    connection_id TEXT REFERENCES connections(id) ON DELETE SET NULL,
+    title TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT 'general',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guide_conv_user ON guide_conversations(user_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS guide_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES guide_conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guide_msg_conv ON guide_messages(conversation_id, created_at);
+
+CREATE TABLE IF NOT EXISTS admin_audit (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    ref_id TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
 `;
 
+const resolveTarget = (target) => {
+    if (target) return target;
+    const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+    if (isPostgresUrl(url)) return url;
+    if (process.env.SQLITE_DB_PATH) return process.env.SQLITE_DB_PATH;
+    if (process.env.NODE_ENV === "test") return ":memory:";
+    if (process.env.VERCEL) {
+        // Serverless file systems are read-only except /tmp, and /tmp is wiped between instances.
+        if (process.env.ALLOW_EPHEMERAL_DB === "true") return "/tmp/sambandh_setu.db";
+        return null;
+    }
+    return path.join(__dirname, "..", "data", "sambandh_setu.db");
+};
+
 const initDb = (target) => {
-    const resolvedTarget =
-        target ||
-        process.env.DATABASE_URL ||
-        process.env.NEON_DATABASE_URL ||
-        process.env.POSTGRES_URL ||
-        process.env.SQLITE_DB_PATH ||
-        path.join(__dirname, "..", "sambandh_setu.db");
-
-    if (dbInstance && currentDbTarget === resolvedTarget) {
-        return dbInstance;
+    const resolved = resolveTarget(target);
+    if (!resolved) {
+        const error = new Error("DATABASE_URL is not configured");
+        error.code = "DB_NOT_CONFIGURED";
+        throw error;
     }
-
+    if (dbInstance && currentDbTarget === resolved) return dbInstance;
     if (dbInstance) {
-        try { dbInstance.close(); } catch {}
+        try { dbInstance.close(); } catch { /* already closed */ }
         dbInstance = null;
+        readyPromise = null;
     }
+    currentDbTarget = resolved;
 
-    currentDbTarget = resolvedTarget;
-
-    if (isPostgresUrl(resolvedTarget)) {
-        pgPoolInstance = new Pool({
-            connectionString: resolvedTarget,
-            ssl: { rejectUnauthorized: false },
-            max: 10,
-            idleTimeoutMillis: 30000,
+    if (isPostgresUrl(resolved)) {
+        const { Pool, types } = require("pg");
+        types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
+        const pool = new Pool({
+            connectionString: resolved,
+            // Verify the server certificate by default. Set PGSSL_REJECT_UNAUTHORIZED=false only for
+            // providers that use a private CA you cannot pin.
+            ssl: { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" },
+            max: Number(process.env.PG_POOL_MAX || (process.env.VERCEL ? 3 : 10)),
+            idleTimeoutMillis: 10000,
             connectionTimeoutMillis: 10000
         });
-
-        pgPoolInstance.on("error", (err) => {
-            console.error("[Neon DB] Idle client error:", err.message);
+        pool.on("error", (err) => console.error("Postgres idle client error: code=%s", err.code || "none"));
+        dbInstance = createPgAdapter(pool);
+        readyPromise = pool.query(SCHEMA_DDL).then(() => true);
+        readyPromise.catch((err) => {
+            console.error("Postgres schema init failed: code=%s", err.code || "none");
+            readyPromise = null;
         });
-
-        const adapter = createPgAdapter(pgPoolInstance);
-        dbInstance = adapter;
-
-        // Auto-run schema DDL asynchronously for Postgres
-        adapter.initPromise = pgPoolInstance.query(SCHEMA_DDL).catch((err) => {
-            console.error("[Neon DB] Failed to initialize schema:", err.message);
-        });
-
         return dbInstance;
     }
 
-    // SQLite
-    if (resolvedTarget !== ":memory:") {
-        const dir = path.dirname(resolvedTarget);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+    const { DatabaseSync } = require("node:sqlite");
+    if (resolved !== ":memory:") {
+        fs.mkdirSync(path.dirname(resolved), { recursive: true });
     }
-
-    const sqlite = new DatabaseSync(resolvedTarget);
+    const sqlite = new DatabaseSync(resolved);
     sqlite.exec("PRAGMA foreign_keys = ON;");
-    if (resolvedTarget !== ":memory:") {
-        try {
-            sqlite.exec("PRAGMA journal_mode = WAL;");
-        } catch {}
+    if (resolved !== ":memory:") {
+        try { sqlite.exec("PRAGMA journal_mode = WAL;"); } catch { /* optional */ }
     }
     sqlite.exec(SCHEMA_DDL);
-
-    const adapter = createSqliteAdapter(sqlite);
-    dbInstance = adapter;
+    dbInstance = createSqliteAdapter(sqlite);
+    readyPromise = Promise.resolve(true);
     return dbInstance;
 };
 
-const getDb = () => {
-    if (!dbInstance) {
-        initDb();
+const getDb = () => dbInstance || initDb();
+
+/** Resolves once the schema exists. Safe to call on every request. */
+const ensureReady = async () => {
+    getDb();
+    if (!readyPromise) {
+        // A previous init failed: retry once by re-running the DDL.
+        const db = getDb();
+        readyPromise = Promise.resolve(db.exec(SCHEMA_DDL)).then(() => true);
     }
-    return dbInstance;
+    return readyPromise;
 };
 
 const closeDb = async () => {
     if (dbInstance) {
-        try {
-            await dbInstance.close();
-        } catch {}
-        dbInstance = null;
-        currentDbTarget = null;
-        pgPoolInstance = null;
+        try { await dbInstance.close(); } catch { /* ignore */ }
     }
+    dbInstance = null;
+    currentDbTarget = null;
+    readyPromise = null;
 };
 
 const isReady = () => dbInstance !== null;
 
+/** Test helper: empties every table. */
 const resetDb = async () => {
     const db = getDb();
-    const tables = [
-        "reflection_answers",
-        "stage_contents",
-        "reflection_questions",
-        "otps",
-        "notifications",
-        "messages",
-        "chats",
-        "connection_requests",
-        "connections",
-        "profiles",
-        "users"
-    ];
-
+    await ensureReady();
     if (db.isPostgres) {
-        for (const table of tables) {
-            await db.exec(`DROP TABLE IF EXISTS ${table} CASCADE;`);
-        }
-        await db.exec(SCHEMA_DDL);
+        await db.exec(`TRUNCATE ${TABLES.join(", ")} CASCADE;`);
     } else {
         db.exec("PRAGMA foreign_keys = OFF;");
-        for (const table of tables) {
-            db.exec(`DROP TABLE IF EXISTS ${table};`);
-        }
+        for (const table of TABLES) db.exec(`DELETE FROM ${table};`);
         db.exec("PRAGMA foreign_keys = ON;");
-        db.exec(SCHEMA_DDL);
     }
 };
 
-module.exports = {
-    initDb,
-    getDb,
-    closeDb,
-    isReady,
-    resetDb,
-    generateId,
-    isPostgresUrl
-};
+module.exports = { initDb, getDb, ensureReady, closeDb, isReady, resetDb, generateId, nowIso, isPostgresUrl, SCHEMA_DDL };

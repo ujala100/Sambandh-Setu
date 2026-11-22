@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-# Exit immediately if a command exits with a non-zero status
+# Production build for a long-running host (Render, Railway, a VM). Vercel does not use this file.
+# The schema is created automatically on first start. No demo data is ever loaded in production.
 set -o errexit
-
-echo "=========================================="
-echo "  Sambandh Setu Backend - Production Build"
-echo "=========================================="
-
-echo "===> Installing dependencies..."
-npm ci || npm install
-
-echo "===> Initializing database and running seed if needed..."
-node seed/seedUsers.js || echo "Database seed completed or skipped."
-
-echo "===> Backend build completed successfully!"
+npm ci
