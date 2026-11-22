@@ -76,7 +76,7 @@ host - check `MONGODB_URI` and the Atlas IP access list.
 docker build -t setu-backend:local .
 docker run --rm -p 5000:5000 \
   -e MONGODB_URI="mongodb://127.0.0.1:27017/sambandh_setu" \
-  -e JWT_SECRET="local-test-secret-at-least-32-characters" \
+  -e JWT_SECRET="$(openssl rand -hex 32)" \
   setu-backend:local
 ```
 

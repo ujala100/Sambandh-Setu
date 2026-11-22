@@ -11,7 +11,12 @@ const MAX_BYTES = 1.5 * 1024 * 1024;
 const MIME = { "image/jpeg": [0xff, 0xd8, 0xff], "image/png": [0x89, 0x50, 0x4e, 0x47], "image/webp": [0x52, 0x49, 0x46, 0x46] };
 const DAY = 24 * 60 * 60;
 
-const key = () => process.env.JWT_SECRET || "dev-only-photo-signing-key-change-me-0000";
+/** Photo links are signed with the server secret; there is no built-in fallback key. */
+const key = () => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) throw new ApiError(500, "SERVER_CONFIGURATION_ERROR", "Photo links are not configured");
+    return secret;
+};
 
 const sign = (photoId, exp) => crypto.createHmac("sha256", key()).update(`photo:${photoId}:${exp}`).digest("hex").slice(0, 32);
 

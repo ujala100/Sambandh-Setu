@@ -2,8 +2,9 @@
  * Test helpers: an in-memory SQLite database and a real HTTP server on a random port.
  */
 process.env.NODE_ENV = "test";
-process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-test-secret-test-secret-1234";
-process.env.OTP_HMAC_SECRET = process.env.OTP_HMAC_SECRET || "test-otp-secret-test-otp-secret-123456";
+// Secrets for the test server are random per run; nothing fixed is kept in the repository.
+process.env.JWT_SECRET = require("crypto").randomBytes(32).toString("hex");
+process.env.OTP_HMAC_SECRET = require("crypto").randomBytes(32).toString("hex");
 process.env.RATE_LIMIT_AUTH_IP_MAX = "1000";
 process.env.RATE_LIMIT_GLOBAL_MAX = "100000";
 delete process.env.DATABASE_URL;

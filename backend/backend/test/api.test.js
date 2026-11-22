@@ -9,7 +9,7 @@ after(async () => { await api.stop(); });
 // ---------------- Auth ----------------
 
 test("sign-up validates input and never returns a code", async () => {
-    const weak = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "weak@example.com", password: "alllowercase", acceptTerms: true } });
+    const weak = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "weak@example.com", password: "a".repeat(12), acceptTerms: true } });
     assert.equal(weak.status, 400);
     const noTerms = await api.call("POST", "/auth/signup", { body: { fullName: "A B", email: "terms@example.com", password: PW } });
     assert.equal(noTerms.status, 400);
