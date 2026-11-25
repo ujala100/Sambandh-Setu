@@ -7,7 +7,7 @@ import Keypad from '../../components/Keypad';
 import OtpInput from '../../components/OtpInput';
 import { useAuth } from '../../context/AuthContext';
 import { sendOtp, verifyOtp } from '../../services/api';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, shadow, spacing } from '../../theme';
 
 const RESEND_SECONDS = 30;
 const MAX_ATTEMPTS = 5;
@@ -18,7 +18,6 @@ export default function VerifyOtpScreen({ navigation, route }: any) {
   const purpose = route.params?.purpose || 'signup';
   const isEmail = identifier.includes('@');
   const targetDisplay = isEmail ? identifier : `+91 xxxxx xx${identifier.slice(-3)}`;
-  // Demo code is strictly for phone verification where no SMS gateway exists yet
   const [demoCode, setDemoCode] = useState<string | undefined>(!isEmail ? route.params?.demoCode : undefined);
   const [code, setCode] = useState('');
   const [seconds, setSeconds] = useState(RESEND_SECONDS);
@@ -28,7 +27,6 @@ export default function VerifyOtpScreen({ navigation, route }: any) {
   const { signIn } = useAuth();
   const locked = attempts >= MAX_ATTEMPTS;
 
-  // 30-second resend countdown
   useEffect(() => {
     if (seconds <= 0) return;
     const t = setTimeout(() => setSeconds((s) => s - 1), 1000);
@@ -45,7 +43,7 @@ export default function VerifyOtpScreen({ navigation, route }: any) {
         if ((session as any).user?.onboardingCompleted || purpose === 'login') {
           await signIn(session);
         } else {
-          navigation.navigate('OnboardingBasics', { session }); // sign-in happens at the end of onboarding
+          navigation.navigate('OnboardingBasics', { session });
         }
         return;
       }
@@ -84,40 +82,42 @@ export default function VerifyOtpScreen({ navigation, route }: any) {
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </Pressable>
 
-      <Text style={styles.title}>{isEmail ? 'Verify your email' : 'Verify your number'}</Text>
-      <Text style={styles.sub}>{isEmail ? "We've sent a 6-digit verification code to your email inbox:" : "We've sent a 6-digit code to"}</Text>
+      <View style={styles.brandRow}>
+        <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
+        <Text style={styles.brandTag}>SECURITY & TRUST</Text>
+      </View>
+
+      <Text style={styles.title}>{isEmail ? 'Verify Your Email' : 'Verify Your Number'}</Text>
+      <Text style={styles.sub}>
+        {isEmail ? 'We sent a 6-digit confirmation code to your inbox:' : 'We sent a 6-digit SMS verification code to:'}
+      </Text>
       <Text style={styles.phone}>{targetDisplay}</Text>
 
-      {/* Demo code is only shown for phone numbers because SMS gateway is not yet configured */}
       {!isEmail && !!demoCode && (
         <View style={styles.demo}>
           <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
           <Text style={styles.demoText}>
-            Demo code (SMS pending): <Text style={styles.demoCode}>{demoCode}</Text>
+            Demo code: <Text style={styles.demoCode}>{demoCode}</Text>
           </Text>
         </View>
       )}
 
-      {isEmail && (
-        <Text style={styles.emailNote}>
-          Please check your inbox (and spam folder) for the code.
-        </Text>
-      )}
-
-      <View style={{ marginTop: spacing.xl }}>
+      {/* OTP Boxes */}
+      <View style={{ marginTop: spacing.lg }}>
         <OtpInput value={code} onChangeText={setCode} />
       </View>
+
       {!!error && <Text style={styles.error}>{error}</Text>}
 
       <Text style={styles.resend}>
         Didn't receive the code?{' '}
         {seconds > 0 && !locked ? (
           <Text style={styles.bold}>
-            Resend <Text style={styles.timer}>({mm}:{ss})</Text>
+            Resend in <Text style={styles.timer}>({mm}:{ss})</Text>
           </Text>
         ) : (
           <Text style={[styles.bold, { color: colors.primary }]} onPress={resend} accessibilityRole="button">
-            Resend
+            Resend Code
           </Text>
         )}
       </Text>
@@ -128,34 +128,106 @@ export default function VerifyOtpScreen({ navigation, route }: any) {
         onDigit={(d) => !locked && setCode((c) => (c.length < 6 ? c + d : c))}
         onDelete={() => setCode((c) => c.slice(0, -1))}
       />
+
       <Button
-        title="Continue"
+        title="Verify & Continue"
         arrow
         loading={loading}
         disabled={code.length !== 6 || locked}
         onPress={verify}
-        style={{ marginTop: spacing.lg }}
+        style={{ marginTop: spacing.md }}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  back: { width: 44, height: 44, justifyContent: 'center' },
-  title: { fontFamily: fonts.bold, fontSize: 24, textAlign: 'center', color: colors.text, marginTop: spacing.lg },
-  sub: { fontFamily: fonts.regular, fontSize: 14, textAlign: 'center', color: colors.muted, marginTop: spacing.sm },
-  phone: { fontFamily: fonts.semibold, fontSize: 15, textAlign: 'center', color: colors.text, marginTop: 2 },
-  demo: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'center',
-    backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: spacing.lg,
-    minHeight: 36, marginTop: spacing.md,
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // Mint Green: #C0E1CF
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
-  demoText: { fontFamily: fonts.regular, fontSize: 12, color: colors.primaryDark, marginLeft: 6 },
-  demoCode: { fontFamily: fonts.bold, fontSize: 14, letterSpacing: 2 },
-  error: { fontFamily: fonts.regular, fontSize: 13, color: colors.danger, textAlign: 'center', marginTop: spacing.md },
-  resend: { fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', color: colors.muted, marginTop: spacing.lg },
-  emailNote: { fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', color: colors.muted, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
-  bold: { fontFamily: fonts.bold, color: colors.text },
-  timer: { fontFamily: fonts.regular, color: colors.muted },
+  back: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  brandTag: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: colors.primary,
+  },
+  title: {
+    fontFamily: fonts.display,
+    fontSize: 30,
+    color: colors.text,
+  },
+  sub: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  phone: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    color: colors.primary,
+    marginTop: 4,
+  },
+  demo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.cardSecondary, // Sage Mint
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 98, 87, 0.12)',
+  },
+  demoText: {
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    color: colors.text,
+  },
+  demoCode: {
+    fontFamily: fonts.bold,
+    color: colors.primary,
+  },
+  error: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    color: colors.danger,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  resend: {
+    textAlign: 'center',
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: spacing.lg,
+  },
+  bold: {
+    fontFamily: fonts.bold,
+  },
+  timer: {
+    color: colors.primary,
+  },
 });

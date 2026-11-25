@@ -102,7 +102,7 @@ export default function GuideScreen({ navigation }: any) {
         ) : cc ? (
           <Card>
             <Pressable style={styles.row} onPress={() => navigation.navigate('ProfileDetail', { personId: cc.id })} accessibilityRole="button" accessibilityLabel={`View ${cc.name}'s profile`}>
-              <Avatar size={44} uri={cc.photo} online={cc.online} label={cc.name} />
+              <Avatar size={44} uri={cc.photo} online={cc.online} name={cc.name} />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={styles.cardName}>{cc.name}, {cc.age}</Text>
                 <Text style={styles.muted}>{cc.profession} · {cc.location}</Text>

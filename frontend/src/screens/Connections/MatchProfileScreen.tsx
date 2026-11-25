@@ -10,7 +10,7 @@ import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
 import { acceptRequest, declineRequest, sendInterest, skipPerson, toggleBookmark } from '../../services/api';
 import { getMatchProfile, MatchProfile, Source } from '../../services/matchData';
-import { store } from '../../services/mockData';
+import { Person, store } from '../../services/mockData';
 import { colors, fonts, radius, spacing } from '../../theme';
 
 const TABS = ['Overview', 'About', 'Lifestyle', 'Family', 'Preferences'] as const;
@@ -112,7 +112,7 @@ export default function MatchProfileScreen({ navigation, route }: any) {
         </Pressable>
 
         <View style={styles.topCenter}>
-          <Avatar size={26} />
+          <Avatar size={26} uri={p.photo} name={p.name} />
           <Text style={styles.topTitle} numberOfLines={1}>{p.name}, {p.age}</Text>
           {p.online && <View style={styles.online} />}
         </View>

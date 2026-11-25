@@ -142,6 +142,7 @@ export async function getChats(filter: ChatFilter = 'all', query = ''): Promise<
         online: true,
         muted: Boolean(c.muted),
         isNew: (c.unreadCount || 0) > 0,
+        photo: p.avatarUrl || p.avatar || undefined,
       };
     });
   } catch {
@@ -149,7 +150,13 @@ export async function getChats(filter: ChatFilter = 'all', query = ''): Promise<
   }
 }
 
+const isValidChatId = (id: string) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+
 export async function getMessages(chatId: string): Promise<Msg[]> {
+  if (!isValidChatId(chatId)) {
+    return [];
+  }
+
   if (USE_MOCK) {
     await delay(200);
     return [
@@ -184,8 +191,8 @@ export async function sendMessage(chatId: string, text: string): Promise<Msg> {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };
 
-  if (USE_MOCK) {
-    await delay(300);
+  if (USE_MOCK || !isValidChatId(chatId)) {
+    if (USE_MOCK) await delay(300);
     return localMsg;
   }
 
@@ -207,7 +214,7 @@ export async function sendMessage(chatId: string, text: string): Promise<Msg> {
 }
 
 export async function markRead(chatId: string): Promise<void> {
-  if (!USE_MOCK) {
+  if (!USE_MOCK && isValidChatId(chatId)) {
     await request(`/chats/${chatId}/read`, { method: 'POST' }).catch(() => {});
   }
 }

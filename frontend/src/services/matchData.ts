@@ -6,7 +6,7 @@ type IconRow = { icon: string; label: string; value: string; color?: string };
 
 export type MatchProfile = {
   id: string; name: string; age: number; location: string; profession: string; company: string;
-  education: string; online: boolean; verified: boolean;
+  education: string; online: boolean; verified: boolean; photo?: string;
   tags: string[]; quote: string; glance: IconRow[]; about: string;
   personal: Row[]; educationRows: Row[]; career: Row[];
   interests: IconRow[]; routine: Row[]; values: string[];
@@ -17,7 +17,7 @@ export type Source = 'received' | 'sent' | 'discover' | 'active' | 'paused' | 'o
 function findPerson(id: string): { person: Person; source: Source } | null {
   const lists: [Person[], Source][] = [
     [store.received, 'received'], [store.discover, 'discover'], [store.sent, 'sent'],
-    [store.active, 'active'], [store.paused, 'paused'], [store.completed, 'other'],
+    [store.active, 'active'], [store.paused, 'paused'], [store.closed, 'other'],
   ];
   for (const [list, source] of lists) {
     const p = list.find((x) => x.id === id);
@@ -39,7 +39,7 @@ function build(p: Person): MatchProfile {
   const quote = `I believe in honest communication, mutual respect and growing together. I'm looking for a partner to build a happy and balanced life with.`;
   return {
     id: p.id, name: p.name, age: p.age, location: p.location, profession: p.profession, company,
-    education, online: !!p.online, verified: !!p.verified,
+    education, online: !!p.online, verified: !!p.verified, photo: p.photo,
     tags: ['Calm', 'Thoughtful', 'Family-oriented', 'Travel Lover'],
     quote,
     glance: [

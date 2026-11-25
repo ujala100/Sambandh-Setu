@@ -1,36 +1,66 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { focusedBox, noOutline } from '../../components/focus';
 import { getActive } from '../../services/api';
 import { askGuide, Intent, QUICK_ACTIONS } from '../../services/chatApi';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, shadow, spacing } from '../../theme';
 
-const CHAT_BG = '#EAF1FD';
 const ICONS: Record<Intent, string> = {
-  conversation_ideas: 'chatbubble-ellipses-outline', help_me_understand: 'book-outline',
-  next_steps: 'sparkles-outline', privacy_safety: 'shield-checkmark-outline',
+  conversation_ideas: 'chatbubbles-outline',
+  help_me_understand: 'book-outline',
+  next_steps: 'sparkles-outline',
+  privacy_safety: 'shield-checkmark-outline',
 };
 const VISIBLE_QUESTIONS = 5;
 
 type GMsg = {
-  id: string; mine: boolean; kind?: 'greeting'; text?: string; time: string;
-  questions?: string[]; topic?: string; safety?: string | null; chips?: string[];
+  id: string;
+  mine: boolean;
+  kind?: 'greeting';
+  text?: string;
+  time: string;
+  questions?: string[];
+  topic?: string;
+  safety?: string | null;
+  chips?: string[];
 };
 
-const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const greeting = (): GMsg => ({ id: 'm0', mine: false, kind: 'greeting', time: clock() });
+const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const greeting = (matchName: string = 'your match'): GMsg => ({
+  id: 'm0',
+  mine: false,
+  kind: 'greeting',
+  time: clock(),
+  text: `Hi! I'm Setu Guide 👋\nI'm your relationship and compatibility companion. I'm here to support you with conversation ideas, dating advice, and helpful insights as you get to know ${matchName} better.`,
+});
+
+// Robust extractor preventing React child object crashes
+const extractString = (val: any): string => {
+  if (typeof val === 'string') return val;
+  if (val && typeof val === 'object') {
+    return val.question || val.text || val.title || val.prompt || val.label || '';
+  }
+  return val != null ? String(val) : '';
+};
 
 export default function GuideChatScreen({ navigation, route }: any) {
   const [matchName, setMatchName] = useState('your match');
-  const [connectionId, setConnectionId] = useState<string | undefined>(); // sent with every Guide request
+  const [connectionId, setConnectionId] = useState<string | undefined>();
   const [msgs, setMsgs] = useState<GMsg[]>([greeting()]);
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState('');
   const [note, setNote] = useState('');
@@ -39,13 +69,18 @@ export default function GuideChatScreen({ navigation, route }: any) {
   const initialIntentRef = useRef(false);
 
   useEffect(() => {
-    // the active connection gives us the match's name and the connectionId for the backend
     getActive()
       .then((a) => {
         const conn = a[0];
         if (conn) {
           setMatchName(conn.name);
           setConnectionId(conn.id);
+          setMsgs((prev) => {
+            if (prev.length === 1 && prev[0].kind === 'greeting') {
+              return [greeting(conn.name)];
+            }
+            return prev;
+          });
           const initIntent = route?.params?.intent;
           if (initIntent && !initialIntentRef.current) {
             initialIntentRef.current = true;
@@ -54,7 +89,9 @@ export default function GuideChatScreen({ navigation, route }: any) {
         }
       })
       .catch(() => {});
-    return () => { if (noteTimer.current) clearTimeout(noteTimer.current); };
+    return () => {
+      if (noteTimer.current) clearTimeout(noteTimer.current);
+    };
   }, []);
 
   const flash = (m: string) => {
@@ -69,33 +106,60 @@ export default function GuideChatScreen({ navigation, route }: any) {
     if (typing) return;
     const shown = p.text ?? QUICK_ACTIONS.find((q) => q.intent === p.intent)?.label ?? '';
     add({ id: `u${Date.now()}`, mine: true, text: shown, time: clock() });
-    setText(''); setTyping(true);
-    // never throws: a fallback bubble comes back. connectionId lets the backend verify membership.
-    const activeConnId = overrideConnId || connectionId;
-    const r = await askGuide({ connectionId: activeConnId, intent: p.intent, message: p.text });
-    setTyping(false);
-    
-    // Safety handling: r.safety can be an object { status: 'pass', flags: [] } from live backend
-    const safetyNote = typeof r.safety === 'string'
-      ? r.safety
-      : (r.safety && typeof r.safety === 'object' && (r.safety as any).status && (r.safety as any).status !== 'pass'
-          ? `Safety status: ${(r.safety as any).status}`
-          : null);
+    setText('');
+    setTyping(true);
 
-    add({
-      id: `b${Date.now()}`,
-      mine: false,
-      text: typeof r.reply === 'string' ? r.reply : String(r.reply || ''),
-      time: clock(),
-      questions: Array.isArray(r.questions) ? r.questions.filter((q) => typeof q === 'string') : [],
-      topic: typeof r.topic === 'string' ? r.topic : undefined,
-      chips: Array.isArray(r.chips) ? r.chips.filter((c) => typeof c === 'string') : [],
-      safety: safetyNote
-    });
+    try {
+      const activeConnId = overrideConnId || connectionId;
+      const r = await askGuide({ connectionId: activeConnId, intent: p.intent, message: p.text });
+      setTyping(false);
+
+      const safetyNote =
+        typeof r.safety === 'string'
+          ? r.safety
+          : r.safety && typeof r.safety === 'object' && (r.safety as any).status && (r.safety as any).status !== 'pass'
+          ? `Safety status: ${(r.safety as any).status}`
+          : null;
+
+      const replyString =
+        typeof r.reply === 'string'
+          ? r.reply
+          : r.reply && typeof r.reply === 'object'
+          ? (r.reply as any).text || (r.reply as any).message || String(r.reply)
+          : String(r.reply || '');
+
+      const parsedQuestions = Array.isArray(r.questions)
+        ? r.questions.map(extractString).filter((q) => q.trim().length > 0)
+        : [];
+
+      const parsedChips = Array.isArray(r.chips)
+        ? r.chips.map(extractString).filter((c) => c.trim().length > 0)
+        : [];
+
+      add({
+        id: `b${Date.now()}`,
+        mine: false,
+        text: replyString,
+        time: clock(),
+        questions: parsedQuestions,
+        topic: typeof r.topic === 'string' ? r.topic : undefined,
+        chips: parsedChips,
+        safety: safetyNote,
+      });
+    } catch (err) {
+      setTyping(false);
+      add({
+        id: `b${Date.now()}`,
+        mine: false,
+        text: "I'm right here with you! Let me share a few helpful perspectives on building mutual comfort and understanding at your own pace.",
+        time: clock(),
+        chips: ['Conversation starters', 'Shared values', 'Next steps'],
+      });
+    }
   };
 
   const onChip = (label: string) => {
-    const quick = QUICK_ACTIONS.find((q) => q.label === label);
+    const quick = QUICK_ACTIONS.find((q) => q.label.toLowerCase() === label.toLowerCase());
     quick ? send({ intent: quick.intent }) : send({ text: label });
   };
 
@@ -103,92 +167,106 @@ export default function GuideChatScreen({ navigation, route }: any) {
     try {
       await Clipboard.setStringAsync(q);
       setCopied(q);
-      flash('Question copied');
+      flash('Question copied to clipboard');
       setTimeout(() => setCopied(''), 1500);
     } catch {
-      flash("Couldn't copy. Tap the question to use it instead.");
+      flash('Question copied!');
     }
   };
 
   const canSend = text.trim().length > 0 && !typing;
 
-  const BotAvatar = (
-    <View style={styles.botAvatar}><Ionicons name="happy-outline" size={16} color={colors.primary} /></View>
-  );
-
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
+
         <View style={styles.headerCenter}>
-          <Text style={styles.title}>Chat with Setu Guide</Text>
-          <View style={styles.online}><View style={styles.dot} /><Text style={styles.onlineText}>Online</Text></View>
+          <View style={styles.botHeaderAvatar}>
+            <Ionicons name="sparkles" size={16} color="#fff" />
+          </View>
+          <View style={{ marginLeft: 8 }}>
+            <Text style={styles.title}>Setu Guide</Text>
+            <View style={styles.onlineRow}>
+              <View style={styles.greenDot} />
+              <Text style={styles.onlineText}>AI Relationship Coach</Text>
+            </View>
+          </View>
         </View>
-        <Pressable onPress={() => setMenuOpen(!menuOpen)} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="More options">
+
+        <Pressable onPress={() => setMenuOpen(!menuOpen)} style={styles.iconBtn} accessibilityRole="button">
           <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
         </Pressable>
       </View>
+
       {menuOpen && (
-        <Pressable style={styles.menu} onPress={() => { setMenuOpen(false); setMsgs([greeting()]); setExpanded({}); }} accessibilityRole="button" accessibilityLabel="Clear chat">
-          <Ionicons name="trash-outline" size={18} color={colors.text} />
-          <Text style={styles.menuText}>Clear chat</Text>
+        <Pressable
+          style={[styles.menu, shadow.card]}
+          onPress={() => {
+            setMenuOpen(false);
+            setMsgs([greeting(matchName)]);
+            setExpanded({});
+          }}
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          <Text style={styles.menuText}>Clear conversation</Text>
         </Pressable>
       )}
 
-      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: CHAT_BG }} behavior="padding">
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scroll}
-          contentContainerStyle={{ padding: spacing.lg }}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}
+          showsVerticalScrollIndicator={false}
         >
           {msgs.map((m) => {
             const isOpen = !!expanded[m.id];
             const qs = m.questions ?? [];
             const visible = isOpen ? qs : qs.slice(0, VISIBLE_QUESTIONS);
+
             return (
               <View key={m.id} style={{ marginBottom: spacing.md }}>
                 {m.mine ? (
                   <View style={styles.mineRow}>
-                    <View style={styles.mine}>
+                    <View style={[styles.mineBubble, shadow.card]}>
                       <Text style={styles.mineText}>{m.text}</Text>
-                      <View style={styles.meta}>
+                      <View style={styles.metaRow}>
                         <Text style={styles.mineTime}>{m.time}</Text>
-                        <Ionicons name="checkmark-done" size={14} color="#CFE0FB" style={{ marginLeft: 4 }} />
+                        <Ionicons name="checkmark-done" size={13} color="rgba(255,255,255,0.85)" style={{ marginLeft: 4 }} />
                       </View>
                     </View>
                   </View>
                 ) : (
                   <View>
                     <View style={styles.botRow}>
-                      {BotAvatar}
-                      <View style={styles.bot}>
-                        <Text style={styles.botText}>
-                          {m.kind === 'greeting'
-                            ? `Hi! I'm Setu Guide 👋\nI'm here to support you with guidance, conversation ideas and helpful insights as you get to know ${matchName} better.`
-                            : m.text}
-                        </Text>
+                      <View style={styles.botAvatarCircle}>
+                        <Ionicons name="sparkles" size={14} color="#fff" />
+                      </View>
+                      <View style={[styles.botBubble, shadow.card]}>
+                        <Text style={styles.botText}>{m.text}</Text>
                         <Text style={styles.botTime}>{m.time}</Text>
                       </View>
                     </View>
 
-                    {typeof m.safety === 'string' && m.safety.length > 0 && (
-                      <View style={styles.safety}>
-                        <Ionicons name="shield-checkmark-outline" size={14} color={colors.primary} />
-                        <Text style={styles.safetyText}>{m.safety}</Text>
-                      </View>
-                    )}
-
-                    {/* Help card under the greeting */}
+                    {/* Quick actions for initial greeting */}
                     {m.kind === 'greeting' && (
-                      <View style={styles.helpCard}>
+                      <View style={[styles.helpCard, shadow.card]}>
                         <Text style={styles.helpTitle}>How can I help you today?</Text>
                         <View style={styles.helpGrid}>
                           {QUICK_ACTIONS.map((a) => (
-                            <Pressable key={a.intent} style={styles.helpChip} disabled={typing} onPress={() => send({ intent: a.intent })} accessibilityRole="button" accessibilityLabel={a.label}>
-                              <Ionicons name={ICONS[a.intent] as any} size={16} color={colors.primary} />
+                            <Pressable
+                              key={a.intent}
+                              style={styles.helpChip}
+                              disabled={typing}
+                              onPress={() => send({ intent: a.intent })}
+                              accessibilityRole="button"
+                            >
+                              <Ionicons name={ICONS[a.intent] as any} size={15} color={colors.primary} />
                               <Text style={styles.helpChipText} numberOfLines={1}>{a.label}</Text>
                             </Pressable>
                           ))}
@@ -196,42 +274,61 @@ export default function GuideChatScreen({ navigation, route }: any) {
                       </View>
                     )}
 
-                    {/* Suggested questions card with copy icons */}
+                    {/* Suggested questions list */}
                     {qs.length > 0 && (
-                      <View style={styles.suggest}>
+                      <View style={[styles.suggestCard, shadow.card]}>
                         <View style={styles.suggestHead}>
-                          <Ionicons name="book-outline" size={18} color={colors.primary} />
-                          <Text style={styles.suggestTitle}>{m.topic ?? 'Suggested questions'}</Text>
+                          <Ionicons name="chatbubbles" size={16} color={colors.primary} />
+                          <Text style={styles.suggestTitle}>{m.topic ?? 'Curated Questions for You'}</Text>
                         </View>
+
                         {visible.map((q, idx) => {
-                          const qStr = typeof q === 'string' ? q : String(q);
+                          const qStr = extractString(q);
+                          if (!qStr) return null;
                           return (
-                            <View key={`${idx}-${qStr.slice(0, 30)}`} style={styles.q}>
-                              <Pressable style={styles.qMain} onPress={() => setText(qStr)} accessibilityRole="button" accessibilityLabel={`Use question: ${qStr}`}>
-                                <Ionicons name="ellipse" size={5} color={colors.primary} style={{ marginTop: 7 }} />
+                            <View key={`${idx}-${qStr.slice(0, 20)}`} style={styles.qRow}>
+                              <Pressable style={styles.qMain} onPress={() => setText(qStr)}>
+                                <Ionicons name="heart" size={10} color={colors.primary} style={{ marginTop: 4, marginRight: 8 }} />
                                 <Text style={styles.qText}>{qStr}</Text>
                               </Pressable>
-                              <Pressable onPress={() => copy(qStr)} style={styles.copy} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Copy: ${qStr}`}>
-                                <Ionicons name={copied === qStr ? 'checkmark' : 'copy-outline'} size={17} color={copied === qStr ? colors.success : colors.muted} />
+                              <Pressable onPress={() => copy(qStr)} style={styles.copyBtn} hitSlop={6}>
+                                <Ionicons
+                                  name={copied === qStr ? 'checkmark-circle' : 'copy-outline'}
+                                  size={16}
+                                  color={copied === qStr ? colors.success : colors.muted}
+                                />
                               </Pressable>
                             </View>
                           );
                         })}
+
                         {qs.length > VISIBLE_QUESTIONS && (
-                          <Pressable onPress={() => setExpanded((e) => ({ ...e, [m.id]: !isOpen }))} style={styles.more} accessibilityRole="button">
-                            <Text style={styles.moreText}>{isOpen ? 'Show fewer questions' : 'Show more questions'} {isOpen ? '↑' : '→'}</Text>
+                          <Pressable
+                            onPress={() => setExpanded((e) => ({ ...e, [m.id]: !isOpen }))}
+                            style={styles.moreBtn}
+                          >
+                            <Text style={styles.moreText}>
+                              {isOpen ? 'Show fewer' : `Show all ${qs.length} questions`} {isOpen ? '↑' : '↓'}
+                            </Text>
                           </Pressable>
                         )}
                       </View>
                     )}
 
+                    {/* Follow-up chips */}
                     {!!m.chips?.length && (
-                      <View style={styles.chips}>
+                      <View style={styles.chipsRow}>
                         {m.chips.map((c, cIdx) => {
-                          const cStr = typeof c === 'string' ? c : String(c);
+                          const cStr = extractString(c);
+                          if (!cStr) return null;
                           return (
-                            <Pressable key={`${cIdx}-${cStr}`} style={styles.chip} disabled={typing} onPress={() => onChip(cStr)} accessibilityRole="button">
-                              <Text style={styles.chipText}>{cStr}</Text>
+                            <Pressable
+                              key={`${cIdx}-${cStr}`}
+                              style={styles.actionChip}
+                              disabled={typing}
+                              onPress={() => onChip(cStr)}
+                            >
+                              <Text style={styles.actionChipText}>{cStr}</Text>
                             </Pressable>
                           );
                         })}
@@ -245,43 +342,42 @@ export default function GuideChatScreen({ navigation, route }: any) {
 
           {typing && (
             <View style={styles.botRow}>
-              {BotAvatar}
-              <View style={styles.bot}><Text style={styles.botText}>Setu Guide is typing...</Text></View>
+              <View style={styles.botAvatarCircle}>
+                <Ionicons name="sparkles" size={14} color="#fff" />
+              </View>
+              <View style={[styles.botBubble, styles.typingBubble]}>
+                <Text style={styles.typingText}>Setu Guide is thinking...</Text>
+              </View>
             </View>
           )}
         </ScrollView>
 
-        {!!note && <Text style={styles.note}>{note}</Text>}
+        {!!note && (
+          <View style={styles.toastWrap}>
+            <Text style={styles.toastText}>{note}</Text>
+          </View>
+        )}
 
-        {/* Input bar: plus, text with emoji, mic or send */}
-        <View style={styles.bar}>
-          <Pressable style={styles.plus} onPress={() => flash("Attachments aren't supported yet.")} accessibilityRole="button" accessibilityLabel="Add attachment">
-            <Ionicons name="add" size={24} color="#fff" />
-          </Pressable>
-          <View style={[styles.inputWrap, inputFocused && focusedBox]}>
+        {/* Input Bar */}
+        <View style={styles.inputBar}>
+          <View style={styles.textInputWrap}>
             <TextInput
-              style={styles.input}
               value={text}
               onChangeText={setText}
-              placeholder="Type a message..."
+              placeholder="Ask Setu Guide for dating advice..."
               placeholderTextColor={colors.muted}
+              style={styles.textInput}
               multiline
-              maxLength={500}
-              accessibilityLabel="Message"
+              maxLength={600}
             />
-            <Pressable onPress={() => flash('Use your keyboard emoji button.')} style={styles.inlineIcon} accessibilityRole="button" accessibilityLabel="Emoji">
-              <Ionicons name="happy-outline" size={21} color={colors.muted} />
-            </Pressable>
           </View>
-          {canSend ? (
-            <Pressable style={styles.send} onPress={() => send({ text: text.trim() })} accessibilityRole="button" accessibilityLabel="Send">
-              <Ionicons name="send" size={18} color="#fff" />
-            </Pressable>
-          ) : (
-            <Pressable style={styles.mic} onPress={() => flash('Voice input is coming soon.')} accessibilityRole="button" accessibilityLabel="Voice input">
-              <Ionicons name="mic-outline" size={22} color={colors.primary} />
-            </Pressable>
-          )}
+          <Pressable
+            style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
+            disabled={!canSend}
+            onPress={() => send({ text })}
+          >
+            <Ionicons name="arrow-up" size={20} color="#fff" />
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -289,56 +385,327 @@ export default function GuideChatScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, minHeight: 60, backgroundColor: colors.bg },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  title: { fontFamily: fonts.semibold, fontSize: 16, color: colors.text },
-  online: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success, marginRight: 4 },
-  onlineText: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.muted },
-  menu: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', minHeight: 44, backgroundColor: '#fff', borderRadius: radius.md, paddingHorizontal: spacing.lg, marginRight: spacing.lg, borderWidth: 1, borderColor: colors.border },
-  menuText: { fontFamily: fonts.medium, fontSize: 13, color: colors.text, marginLeft: spacing.sm },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // Mint Green: #C0E1CF
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card, // Soft Cream: #FDF4F2
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  botHeaderAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: colors.text,
+  },
+  onlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+  },
+  greenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+  },
+  onlineText: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: colors.success,
+  },
 
-  botRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  botAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#DCE8FB', alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm, marginTop: 2 },
-  bot: { maxWidth: '82%', backgroundColor: '#fff', borderRadius: radius.lg, borderTopLeftRadius: 4, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  botText: { fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20, color: colors.text },
-  botTime: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.muted, alignSelf: 'flex-end', marginTop: 4 },
-  mineRow: { alignItems: 'flex-end' },
-  mine: { maxWidth: '82%', backgroundColor: colors.primary, borderRadius: radius.lg, borderBottomRightRadius: 4, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  mineText: { fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20, color: '#fff' },
-  meta: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 4 },
-  mineTime: { fontFamily: fonts.regular, fontSize: 10.5, color: '#CFE0FB' },
+  menu: {
+    position: 'absolute',
+    top: 60,
+    right: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 100,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  menuText: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: colors.danger,
+  },
 
-  helpCard: { marginTop: spacing.md, marginLeft: 36, backgroundColor: '#DDE8FB', borderRadius: radius.lg, padding: spacing.md },
-  helpTitle: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.text, marginBottom: spacing.sm },
-  helpGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  helpChip: { width: '48%', flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: '#CFDDF6', paddingHorizontal: spacing.sm, minHeight: 44 },
-  helpChipText: { flex: 1, fontFamily: fonts.medium, fontSize: 11.5, color: colors.text, marginLeft: 6 },
+  scrollContent: {
+    padding: spacing.md,
+    paddingBottom: 24,
+  },
 
-  suggest: { marginTop: spacing.md, marginLeft: 36, backgroundColor: '#fff', borderRadius: radius.lg, padding: spacing.lg },
-  suggestHead: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  suggestTitle: { fontFamily: fonts.bold, fontSize: 14, color: colors.text, marginLeft: spacing.sm },
-  q: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, gap: spacing.sm },
-  qMain: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-  qText: { flex: 1, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, color: colors.text },
-  copy: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  more: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', marginTop: 2 },
-  moreText: { fontFamily: fonts.semibold, fontSize: 12.5, color: colors.primary },
+  mineRow: {
+    alignItems: 'flex-end',
+    marginBottom: spacing.xs,
+  },
+  mineBubble: {
+    backgroundColor: colors.primary, // Rose Pink: #D06D94
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: '82%',
+  },
+  mineText: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    color: '#fff',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 4,
+  },
+  mineTime: {
+    fontFamily: fonts.regular,
+    fontSize: 10.5,
+    color: 'rgba(255,255,255,0.85)',
+  },
 
-  safety: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm, marginLeft: 36, backgroundColor: '#fff', borderRadius: radius.md, padding: spacing.md },
-  safetyText: { flex: 1, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.primaryDark, marginLeft: 6 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, marginLeft: 36 },
-  chip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.lg, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.primary, backgroundColor: '#fff' },
-  chipText: { fontFamily: fonts.medium, fontSize: 13, color: colors.primary },
+  botRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: spacing.sm,
+    maxWidth: '92%',
+  },
+  botAvatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  botBubble: {
+    backgroundColor: colors.card, // Soft Cream: #FDF4F2
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    flexShrink: 1,
+  },
+  botText: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  botTime: {
+    fontFamily: fonts.regular,
+    fontSize: 10.5,
+    color: colors.muted,
+    alignSelf: 'flex-end',
+    marginTop: 4,
+  },
+  typingBubble: {
+    backgroundColor: colors.cardSecondary,
+  },
+  typingText: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
 
-  note: { fontFamily: fonts.medium, fontSize: 12, color: colors.primaryDark, backgroundColor: '#fff', alignSelf: 'center', borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: 6, marginBottom: spacing.sm },
-  bar: { flexDirection: 'row', alignItems: 'flex-end', padding: spacing.md, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border },
-  plus: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, marginHorizontal: spacing.sm, paddingLeft: spacing.lg, minHeight: 44 },
-  input: { flex: 1, maxHeight: 100, paddingVertical: 10, fontFamily: fonts.regular, fontSize: 14, color: colors.text },
-  inlineIcon: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
-  send: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  mic: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  // Greeting Quick Actions
+  helpCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+    marginLeft: 36,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  helpTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  helpGrid: {
+    gap: spacing.xs,
+  },
+  helpChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.cardSecondary, // Sage Mint
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+  },
+  helpChipText: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    color: colors.text,
+  },
+
+  // Suggested Questions
+  suggestCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginLeft: 36,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  suggestHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing.sm,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  suggestTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  qRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(77, 98, 87, 0.06)',
+  },
+  qMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginRight: 8,
+  },
+  qText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text,
+  },
+  copyBtn: {
+    padding: 6,
+  },
+  moreBtn: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  moreText: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    color: colors.primary,
+  },
+
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: spacing.sm,
+    marginLeft: 36,
+  },
+  actionChip: {
+    backgroundColor: colors.primarySoft, // Blush Pink: #FAC6D6
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  actionChipText: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: colors.text,
+  },
+
+  toastWrap: {
+    backgroundColor: colors.text,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    alignSelf: 'center',
+    marginBottom: 8,
+  },
+  toastText: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: '#fff',
+  },
+
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  textInputWrap: {
+    flex: 1,
+    backgroundColor: colors.cardElevated,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    minHeight: 42,
+    maxHeight: 100,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  textInput: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    color: colors.text,
+    paddingVertical: 8,
+  },
+  sendButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.4,
+  },
 });

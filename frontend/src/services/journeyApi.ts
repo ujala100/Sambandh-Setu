@@ -73,14 +73,10 @@ export async function loadReflect(): Promise<ReflectData> {
     const remoteQuestions = qRes.questions || [];
     const questions: Question[] = remoteQuestions.map((q: any) => ({
       id: String(q._id || q.id),
-      order: q.order,
-      topic: q.category || 'General',
-      prompt: q.prompt,
-      type: q.type,
-      options: (q.options || []).map((o: any) => o.label || o.value),
-      allowOther: q.allowOther,
-      minRating: q.minRating,
-      maxRating: q.maxRating,
+      category: q.category || q.topic || 'General',
+      text: q.text || q.prompt || '',
+      type: q.type || 'free_text',
+      options: (q.options || []).map((o: any) => (typeof o === 'string' ? o : o.label || o.value)),
     }));
 
     const answersMap: Record<string, Answer> = { ...cachedAnswers };

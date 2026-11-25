@@ -203,22 +203,22 @@ export type HomeData = {
 };
 
 function mapBackendConnection(c: any): Connection {
-  const match = c.participants?.find((p: any) => p.user?.username !== 'aanya') || c.participants?.[0] || {};
+  const match = c.participants?.[0] || {};
   const user = match.user || c.user || {};
   const profile = match.profile || c.profile || {};
   const stageKey: StageKey = (c.stage || 'connect') as StageKey;
-  const loc = profile.lifestyle?.routine ? 'Bengaluru, Karnataka' : 'Mumbai, Maharashtra';
+  const loc = profile.location || 'India';
   const prof = profile.profession || 'Professional';
   return {
     id: String(c.id || c._id),
     name: user.displayName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Match',
-    age: profile.age || 29,
+    age: profile.age || 28,
     profession: prof,
     role: prof,
     location: loc,
     city: loc,
     stage: stageKey,
-    photo: profile.avatarUrl || undefined,
+    photo: profile.avatarUrl || user.avatar || undefined,
     connectedSince: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently',
   } as Connection;
 }
@@ -363,7 +363,7 @@ export async function getDiscover(): Promise<Person[]> {
   const res = await request<{ users: any[] }>('/discover');
   return (res.users || []).map((p: any) => {
     const user = p.user || {};
-    const loc = p.lifestyle?.routine ? 'Bengaluru, Karnataka' : 'Mumbai, Maharashtra';
+    const loc = p.location || 'India';
     const prof = p.profession || 'Professional';
     return {
       id: String(user.id || p.id),
@@ -373,11 +373,13 @@ export async function getDiscover(): Promise<Person[]> {
       city: loc,
       profession: prof,
       role: prof,
-      education: p.education || 'Graduate',
-      photo: p.avatarUrl || undefined,
+      education: p.education || '',
+      photo: p.avatarUrl || user.avatar || undefined,
       verified: true,
       interests: p.interests || [],
       bio: p.bio || '',
+      lifestyle: p.lifestyle || {},
+      family: p.family || {},
     };
   });
 }

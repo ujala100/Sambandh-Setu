@@ -1,170 +1,400 @@
-import React, { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import Card from '../../components/Card';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
+import Avatar from '../../components/Avatar';
+import AppBackground from '../../components/AppBackground';
+import AppLogo from '../../components/AppLogo';
 import { getJourney } from '../../services/journeyApi';
 import { useOwnProfile } from '../../services/ownProfile';
 import { STAGE_LABELS } from '../../services/mockData';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, shadow, spacing } from '../../theme';
 
-const SOFT_BORDER = '#D6E4FC';
+// ---- Profile completion helper ----
+function computeCompletion(me: ReturnType<typeof useOwnProfile>): number {
+  const fields = [me.name, me.age, me.gender, me.height, me.education, me.profession, me.location, me.bio, me.photoUri];
+  const filled = fields.filter((v) => !!v && String(v) !== '0').length;
+  return Math.round((filled / fields.length) * 100);
+}
 
-// small card: icon on the left, value + label on the right (age, gender, height, education, profession)
-function InfoCard({ icon, value, label, placeholder, onPress, flex = 1 }: {
-  icon: string; value?: string; label: string; placeholder?: string; onPress?: () => void; flex?: number;
-}) {
-  const empty = !value;
+// ---- Animated progress bar ----
+function CompletionBar({ pct }: { pct: number }) {
+  const widthAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: pct,
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [pct]);
+
   return (
-    <Pressable
-      style={[styles.info, { flex }]}
-      onPress={empty ? onPress : undefined}
-      disabled={!empty || !onPress}
-      accessibilityRole={empty && onPress ? 'button' : 'text'}
-      accessibilityLabel={`${label}: ${value || placeholder || 'not set'}`}
-    >
-      <Ionicons name={icon as any} size={20} color={colors.primary} />
-      <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-        <Text style={[styles.infoValue, empty && { color: colors.primary }]} numberOfLines={1}>{value || placeholder || '—'}</Text>
-        <Text style={styles.infoLabel}>{label}</Text>
+    <View style={styles.progressOuter}>
+      <View style={styles.progressTrack}>
+        <Animated.View
+          style={[
+            styles.progressFillWrap,
+            {
+              width: widthAnim.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%'],
+              }),
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={['#D06D94', '#FAC6D6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
       </View>
-    </Pressable>
+      <Text style={styles.progressLabel}>{pct}% complete</Text>
+    </View>
   );
 }
 
+// ---- Quick info tile ----
+function InfoTile({
+  icon,
+  label,
+  value,
+  gradientColors,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  gradientColors: [string, string];
+}) {
+  return (
+    <View style={styles.infoTile}>
+      <LinearGradient
+        colors={gradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.infoTileGradient}
+      >
+        <View style={styles.infoTileIconWrap}>
+          <Ionicons name={icon as any} size={18} color={colors.primary} />
+        </View>
+        <Text style={styles.infoTileValue} numberOfLines={1}>
+          {value || '—'}
+        </Text>
+        <Text style={styles.infoTileLabel}>{label}</Text>
+      </LinearGradient>
+    </View>
+  );
+}
+
+// ---- Animated menu row ----
+function MenuRow({
+  icon,
+  label,
+  gradientColors,
+  onPress,
+  showBorder,
+}: {
+  icon: string;
+  label: string;
+  gradientColors: [string, string];
+  onPress: () => void;
+  showBorder: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }),
+      Animated.timing(opacity, { toValue: 0.8, duration: 80, useNativeDriver: true }),
+    ]).start();
+  };
+  const handlePressOut = () => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 8 }),
+      Animated.timing(opacity, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }], opacity }}>
+      <Pressable
+        style={[styles.menuRow, showBorder && styles.menuBorder]}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+      >
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.menuIconCircle}
+        >
+          <Ionicons name={icon as any} size={17} color="#fff" />
+        </LinearGradient>
+        <Text style={styles.menuText}>{label}</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// ---- Main ProfileScreen ----
 export default function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuth();
-  const me = useOwnProfile(); // the signed-in user's own data, not a mock
+  const me = useOwnProfile();
   const [stageLabel, setStageLabel] = useState('');
 
-  useFocusEffect(useCallback(() => {
-    getJourney()
-      .then((j) => {
-        const a = j.stages.find((s: any) => s.status === 'active');
-        setStageLabel(a ? STAGE_LABELS[a.key as keyof typeof STAGE_LABELS] : '');
-      })
-      .catch(() => setStageLabel(''));
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      getJourney()
+        .then((j) => {
+          const a = j.stages?.find((s: any) => s.status === 'active');
+          setStageLabel(a ? STAGE_LABELS[a.key as keyof typeof STAGE_LABELS] : '');
+        })
+        .catch(() => setStageLabel(''));
+    }, [])
+  );
 
-  const soon = (what: string) => () => Alert.alert(what, 'This screen is a stretch goal and is not built yet.');
   const edit = () => navigation.navigate('EditProfile');
-  const photo = me.photoUri || (user as any)?.avatar; // a photo chosen in Edit Profile, or the one from sign-up
+  const photo = me.photoUri || (user as any)?.avatar;
+  const completion = computeCompletion(me);
 
- const menu = [
-  { icon: 'person-outline', label: 'View My Profile', onPress: () => navigation.navigate('ProfileDetail', { mode: 'own' }) },
-  { icon: 'create-outline', label: 'Edit Profile', onPress: () => navigation.navigate('EditProfile') },
-  { icon: 'settings-outline', label: 'Settings', onPress: () => navigation.navigate('Settings') },
-];
+  const menu = [
+    {
+      icon: 'person-outline',
+      label: 'View Public Profile',
+      gradientColors: ['#D06D94', '#FAC6D6'] as [string, string],
+      onPress: () => navigation.navigate('ProfileDetail', { mode: 'own' }),
+    },
+    {
+      icon: 'create-outline',
+      label: 'Edit Profile & Photos',
+      gradientColors: ['#C0E1CF', '#4D6257'] as [string, string],
+      onPress: () => navigation.navigate('EditProfile'),
+    },
+    {
+      icon: 'sparkles-outline',
+      label: 'Setu Guide Settings',
+      gradientColors: ['#FAC6D6', '#D06D94'] as [string, string],
+      onPress: () => navigation.navigate('SetuGuideSettings'),
+    },
+    {
+      icon: 'shield-checkmark-outline',
+      label: 'Privacy & Safety',
+      gradientColors: ['#DFEBE1', '#4D6257'] as [string, string],
+      onPress: () => navigation.navigate('PrivacyVisibility'),
+    },
+    {
+      icon: 'settings-outline',
+      label: 'Account Settings',
+      gradientColors: ['#243B36', '#4D6257'] as [string, string],
+      onPress: () => navigation.navigate('Settings'),
+    },
+  ];
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Atmospheric Dating Background Wallpaper */}
+      <AppBackground opacity={0.32} />
+
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* header */}
+
+        {/* Header */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>My Profile</Text>
-            <Text style={styles.subtitle}>Manage your profile and share what matters to you.</Text>
+            <View style={styles.brandRow}>
+              <AppLogo size={18} style={{ marginRight: 6 }} />
+              <Text style={styles.brandTag}>MY PROFILE</Text>
+            </View>
+            <Text style={styles.title}>Self & Values</Text>
+            <Text style={styles.subtitle}>Present your authentic self with care.</Text>
           </View>
-          <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Settings')} accessibilityRole="button" accessibilityLabel="Settings">
+          <Pressable
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('Settings')}
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+          >
             <Ionicons name="settings-outline" size={22} color={colors.text} />
           </Pressable>
-          <Pressable style={styles.iconBtn} onPress={soon('More options')} accessibilityRole="button" accessibilityLabel="More options">
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
-          </Pressable>
         </View>
 
-        {/* profile card */}
-        <View style={styles.softCard}>
-          <View>
-            {photo ? (
-              <Image source={{ uri: photo }} style={styles.photo} accessibilityLabel="Your profile photo" />
-            ) : (
-              <View style={[styles.photo, styles.photoEmpty]}><Ionicons name="person" size={40} color={colors.primary} /></View>
-            )}
-            <Pressable style={styles.photoEdit} onPress={edit} accessibilityRole="button" accessibilityLabel="Edit photo" hitSlop={8}>
-              <Ionicons name="pencil" size={13} color={colors.primary} />
-            </Pressable>
-          </View>
-
-          <View style={styles.identity}>
-            <View style={styles.nameRow}>
-              <Text style={styles.name} numberOfLines={1}>{me.name}{me.age ? `, ${me.age}` : ''}</Text>
-              <Pressable onPress={edit} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit name" style={{ marginLeft: 6 }}>
-                <Ionicons name="pencil-outline" size={16} color={colors.primary} />
-              </Pressable>
-            </View>
-            {!!me.profession && <Text style={styles.muted}>{me.profession}</Text>}
-            {me.location ? (
-              <View style={styles.locRow}>
-                <Ionicons name="location-outline" size={14} color={colors.primary} />
-                <Text style={[styles.muted, { marginLeft: 4, flex: 1 }]} numberOfLines={1}>{me.location}</Text>
+        {/* Hero Banner — gradient behind avatar */}
+        <View style={[styles.heroCard, shadow.card]}>
+          <LinearGradient
+            colors={['#D06D94', '#FAC6D6', '#FDF4F2']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroBanner}
+          >
+            {/* Avatar with glowing rose border ring */}
+            <Pressable onPress={edit} style={styles.avatarWrapper} accessibilityLabel="Change photo">
+              <LinearGradient
+                colors={['#D06D94', '#FAC6D6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarRingGradient}
+              >
+                <View style={styles.avatarRingInner}>
+                  <Avatar uri={photo} name={me.name || user?.name || 'Me'} size={96} />
+                </View>
+              </LinearGradient>
+              {/* camera edit badge */}
+              <View style={styles.photoEditBtn}>
+                <Ionicons name="camera" size={12} color="#fff" />
               </View>
-            ) : (
-              <Text style={[styles.muted, { color: colors.primary }]} onPress={edit} accessibilityRole="button">Add your location</Text>
-            )}
-            <View style={styles.activeChip}>
-              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-              <Text style={styles.activeText}>Profile Active</Text>
-              <View style={styles.activeDot} />
-            </View>
-          </View>
-        </View>
+            </Pressable>
 
-        {/* bio */}
-        <View style={[styles.softCard, { marginTop: spacing.md, alignItems: 'flex-start' }]}>
-          <Text style={styles.quote}>“</Text>
-          {me.bio ? (
-            <Text style={styles.bio}>{me.bio}</Text>
-          ) : (
-            <Text style={[styles.bio, { color: colors.primary }]} onPress={edit} accessibilityRole="button">
-              Add a short bio so people can get to know you
+            {/* Name */}
+            <Text style={styles.heroName} numberOfLines={1}>
+              {me.name || 'Member'}
+              {me.age ? `, ${me.age}` : ''}
             </Text>
+            {!!me.profession && <Text style={styles.heroProfession}>{me.profession}</Text>}
+            {!!me.location && (
+              <View style={styles.heroLocRow}>
+                <Ionicons name="location-sharp" size={13} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.heroLoc}>{me.location}</Text>
+              </View>
+            )}
+          </LinearGradient>
+
+          {/* Profile completion bar */}
+          <View style={styles.completionSection}>
+            <View style={styles.completionHead}>
+              <Ionicons name="checkmark-circle-outline" size={15} color={colors.primary} />
+              <Text style={styles.completionTitle}>Profile Completion</Text>
+            </View>
+            <CompletionBar pct={completion} />
+          </View>
+
+          {/* Stage badge */}
+          {!!stageLabel && (
+            <View style={styles.stageBadgeRow}>
+              <LinearGradient
+                colors={['#D06D94', '#FAC6D6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.stageBadge}
+              >
+                <Ionicons name="infinite" size={13} color="#fff" />
+                <Text style={styles.stageBadgeText}>In Journey: {stageLabel}</Text>
+              </LinearGradient>
+            </View>
           )}
-          <Pressable onPress={edit} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit bio">
-            <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+
+          {/* Edit profile pill */}
+          <Pressable style={styles.editProfilePill} onPress={edit}>
+            <Ionicons name="create-outline" size={15} color={colors.primary} />
+            <Text style={styles.editProfilePillText}>Edit Profile Details</Text>
           </Pressable>
         </View>
 
-        {/* age / gender / height */}
-        <View style={styles.infoRow}>
-          <InfoCard icon="calendar-outline" value={me.age ? `${me.age} years` : ''} label="Age" placeholder="—" />
-          <InfoCard icon="person-outline" value={me.gender} label="Gender" placeholder="—" />
-          <InfoCard icon="resize-outline" value={me.height} label="Height" placeholder="Add" onPress={edit} />
-        </View>
-        {/* education / profession */}
-        <View style={styles.infoRow}>
-          <InfoCard icon="school-outline" value={me.education} label="Education" placeholder="Add education" onPress={edit} />
-          <InfoCard icon="briefcase-outline" value={me.profession} label="Profession" placeholder="Add profession" onPress={edit} />
+        {/* Quick info grid — 4 tiles */}
+        <View style={styles.infoGrid}>
+          <InfoTile
+            icon="calendar-outline"
+            label="Age"
+            value={me.age ? `${me.age} yrs` : ''}
+            gradientColors={['#FDF4F2', '#FAC6D6']}
+          />
+          <InfoTile
+            icon="location-outline"
+            label="Location"
+            value={me.location || ''}
+            gradientColors={['#FDF4F2', '#DFEBE1']}
+          />
+          <InfoTile
+            icon="briefcase-outline"
+            label="Profession"
+            value={me.profession || ''}
+            gradientColors={['#FDF4F2', '#FAC6D6']}
+          />
+          <InfoTile
+            icon="school-outline"
+            label="Education"
+            value={me.education || ''}
+            gradientColors={['#FDF4F2', '#DFEBE1']}
+          />
         </View>
 
-        {/* my journey */}
-        <View style={[styles.softCard, { marginTop: spacing.md, flexDirection: 'column', alignItems: 'stretch' }]}>
-          <View style={styles.journeyHead}>
-            <View style={styles.bulb}><Ionicons name="bulb-outline" size={18} color={colors.primary} /></View>
-            <Text style={styles.journeyTitle}>My Journey</Text>
-            <Text style={styles.seeAll} onPress={() => navigation.navigate('Journey')} accessibilityRole="link">See all →</Text>
+        {/* Bio card */}
+        <View style={[styles.bioCard, shadow.card]}>
+          <View style={styles.bioAccentBar} />
+          <View style={styles.bioContent}>
+            <View style={styles.bioHead}>
+              <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.primary} />
+              <Text style={styles.bioHeadTitle}>About Me</Text>
+            </View>
+            <Text style={styles.bioText}>
+              {me.bio ||
+                'Add a thoughtful bio so people can understand your passions, values, and what brings you joy.'}
+            </Text>
           </View>
-          <Text style={[styles.muted, { marginTop: spacing.sm, lineHeight: 19 }]}>
-            Currently exploring meaningful connections at my own pace.{'\n'}Open to conversations with like-minded individuals.
-          </Text>
-          {!!stageLabel && <Text style={[styles.muted, { marginTop: spacing.sm, color: colors.primaryDark }]}>Now at: {stageLabel}</Text>}
         </View>
 
-        {/* menu */}
-        <Card style={{ paddingVertical: 0, marginTop: spacing.lg }}>
-          {menu.map((m, i) => (
-            <Pressable key={m.label} onPress={m.onPress} style={[styles.menuRow, i > 0 && styles.menuBorder]} accessibilityRole="button" accessibilityLabel={m.label}>
-              <Ionicons name={m.icon as any} size={20} color={colors.text} />
-              <Text style={styles.menuText}>{m.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Pressable>
-          ))}
-        </Card>
+        {/* Journey promo card */}
+        <Pressable
+          style={[styles.journeyCard, shadow.card]}
+          onPress={() => navigation.navigate('Journey')}
+        >
+          <LinearGradient
+            colors={['#DFEBE1', '#C0E1CF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.journeyGradient}
+          >
+            <View style={styles.journeyIconCircle}>
+              <LinearGradient
+                colors={['#D06D94', '#FAC6D6']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <Ionicons name="infinite" size={20} color="#fff" />
+            </View>
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={styles.journeyTitle}>Your Setu Journey</Text>
+              <Text style={styles.journeySubtitle}>
+                {stageLabel ? `Currently at: ${stageLabel}` : 'Ready to begin when you connect'}
+              </Text>
+            </View>
+            <Ionicons name="arrow-forward" size={18} color={colors.primary} />
+          </LinearGradient>
+        </Pressable>
 
-        <Pressable style={styles.signOut} onPress={signOut} accessibilityRole="button" accessibilityLabel="Sign out">
-          <Ionicons name="log-out-outline" size={20} color={colors.danger} />
-          <Text style={styles.signOutText}>Sign out</Text>
+        {/* Menu */}
+        <View style={[styles.menuCard, shadow.card]}>
+          {menu.map((m, i) => (
+            <MenuRow
+              key={m.label}
+              icon={m.icon}
+              label={m.label}
+              gradientColors={m.gradientColors}
+              onPress={m.onPress}
+              showBorder={i > 0}
+            />
+          ))}
+        </View>
+
+        {/* Sign out */}
+        <Pressable style={styles.signOut} onPress={signOut} accessibilityRole="button">
+          <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+          <Text style={styles.signOutText}>Sign out of Sambandh Setu</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -172,42 +402,372 @@ export default function ProfileScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: spacing.lg, paddingBottom: 120 }, // extra space so the floating tab bar never covers the last row
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.lg },
-  title: { fontFamily: fonts.bold, fontSize: 26, color: colors.text },
-  subtitle: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginTop: 2 },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  scroll: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 120,
+  },
 
-  softCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: SOFT_BORDER, borderRadius: radius.lg, padding: spacing.lg },
-  photo: { width: 80, height: 80, borderRadius: radius.md },
-  photoEmpty: { backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: SOFT_BORDER },
-  photoEdit: { position: 'absolute', right: -6, bottom: -6, width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: SOFT_BORDER, alignItems: 'center', justifyContent: 'center' },
-  identity: { flex: 1, marginLeft: spacing.lg },
-  nameRow: { flexDirection: 'row', alignItems: 'center' },
-  name: { fontFamily: fonts.bold, fontSize: 20, color: colors.text, flexShrink: 1 },
-  muted: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginTop: 2 },
-  locRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  activeChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: colors.successSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, marginTop: spacing.sm },
-  activeText: { fontFamily: fonts.semibold, fontSize: 12, color: colors.success, marginLeft: 4 },
-  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success, marginLeft: 6 },
+  // Header
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  brandTag: {
+    fontFamily: fonts.bold,
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    color: colors.primary,
+  },
+  title: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    color: colors.text,
+  },
+  subtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
 
-  quote: { fontFamily: fonts.bold, fontSize: 30, lineHeight: 34, color: colors.primary, marginRight: spacing.sm },
-  bio: { flex: 1, fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20, color: colors.text, marginRight: spacing.sm },
+  // Hero card
+  heroCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  heroBanner: {
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    alignItems: 'center',
+  },
+  avatarWrapper: {
+    position: 'relative',
+    marginBottom: spacing.sm,
+  },
+  avatarRingGradient: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    padding: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#D06D94',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  avatarRingInner: {
+    width: 102,
+    height: 102,
+    borderRadius: 51,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoEditBtn: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  heroName: {
+    fontFamily: fonts.display,
+    fontSize: 24,
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  heroProfession: {
+    fontFamily: fonts.medium,
+    fontSize: 13.5,
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 2,
+  },
+  heroLocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+  },
+  heroLoc: {
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    color: 'rgba(255,255,255,0.78)',
+  },
 
-  infoRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  info: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, minHeight: 56 },
-  infoValue: { fontFamily: fonts.semibold, fontSize: 14, color: colors.text },
-  infoLabel: { fontFamily: fonts.regular, fontSize: 11, color: colors.muted },
+  // Completion
+  completionSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  completionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  completionTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 12.5,
+    color: colors.text,
+  },
+  progressOuter: {
+    gap: 5,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(208, 109, 148, 0.12)',
+    overflow: 'hidden',
+  },
+  progressFillWrap: {
+    height: '100%',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressLabel: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: colors.muted,
+  },
 
-  journeyHead: { flexDirection: 'row', alignItems: 'center' },
-  bulb: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  journeyTitle: { flex: 1, fontFamily: fonts.semibold, fontSize: 15, color: colors.text, marginLeft: spacing.sm },
-  seeAll: { fontFamily: fonts.semibold, fontSize: 13, color: colors.primary, paddingVertical: 10 },
+  // Stage badge
+  stageBadgeRow: {
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  stageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    shadowColor: '#D06D94',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  stageBadgeText: {
+    fontFamily: fonts.semibold,
+    fontSize: 12.5,
+    color: '#fff',
+  },
 
-  menuRow: { flexDirection: 'row', alignItems: 'center', minHeight: 52 },
-  menuBorder: { borderTopWidth: 1, borderTopColor: colors.border },
-  menuText: { flex: 1, fontFamily: fonts.regular, fontSize: 14.5, color: colors.text, marginLeft: spacing.md },
-  signOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 48, marginTop: spacing.lg },
-  signOutText: { fontFamily: fonts.medium, fontSize: 14, color: colors.danger, marginLeft: spacing.sm },
+  // Edit pill
+  editProfilePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primarySoft,
+    paddingVertical: 11,
+    borderRadius: radius.pill,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  editProfilePillText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.primary,
+  },
+
+  // Info grid (4 tiles in 2x2)
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  infoTile: {
+    width: '48%',
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    ...shadow.card,
+  },
+  infoTileGradient: {
+    padding: spacing.md,
+    minHeight: 80,
+    justifyContent: 'center',
+  },
+  infoTileIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  infoTileValue: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: colors.text,
+  },
+  infoTileLabel: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 1,
+  },
+
+  // Bio card
+  bioCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  bioAccentBar: {
+    width: 4,
+    backgroundColor: colors.primary,
+    borderTopLeftRadius: radius.xl,
+    borderBottomLeftRadius: radius.xl,
+  },
+  bioContent: {
+    flex: 1,
+    padding: spacing.lg,
+  },
+  bioHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 7,
+  },
+  bioHeadTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  bioText: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: colors.text,
+    fontStyle: 'italic',
+  },
+
+  // Journey card
+  journeyCard: {
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+    marginVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 98, 87, 0.12)',
+  },
+  journeyGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  journeyIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  journeyTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: colors.text,
+  },
+  journeySubtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+
+  // Menu card
+  menuCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+  },
+  menuBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  menuIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: {
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.text,
+    marginLeft: spacing.md,
+  },
+
+  // Sign out
+  signOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+    gap: 6,
+  },
+  signOutText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13.5,
+    color: colors.danger,
+  },
 });

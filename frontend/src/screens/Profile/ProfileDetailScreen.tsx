@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,30 +12,42 @@ import { store } from '../../services/mockData';
 import { buildOwnProfile } from '../../services/myProfile';
 import { PROFILES, Profile, Section } from '../../services/profileData';
 import { getSectionValues, MATCH_PREFERENCES, SECTIONS, SectionDef, SectionValues } from '../../services/profileSections';
-import { colors, fonts, spacing } from '../../theme';
+import { colors, fonts, radius, shadow, spacing } from '../../theme';
 
 const TABS = ['About', 'Lifestyle', 'Family', 'Preferences'] as const;
 type Tab = (typeof TABS)[number];
 
-// Another person's profile: the detailed mock if there is one (for example Rohan), otherwise basics from their list entry
 function findMatch(id?: string): Profile | null {
   if (!id) return null;
   if (PROFILES[id]) return PROFILES[id];
   const p = [...store.active, ...store.received, ...store.sent, ...store.discover].find((x) => x.id === id);
   if (!p) return null;
   return {
-    name: p.name, age: p.age, gender: '', height: '', education: '', profession: p.profession, location: p.location, bio: '',
-    about: [{ title: 'Basics', rows: [
-      { icon: 'location-outline', label: 'City', value: p.location },
-      { icon: 'briefcase-outline', label: 'Profession', value: p.profession },
-    ] }],
-    lifestyle: [], family: [],
+    name: p.name,
+    age: p.age,
+    gender: '',
+    height: '',
+    education: '',
+    profession: p.profession,
+    location: p.location,
+    bio: '',
+    about: [
+      {
+        title: 'Basics',
+        rows: [
+          { icon: 'location-outline', label: 'City', value: p.location },
+          { icon: 'briefcase-outline', label: 'Profession', value: p.profession },
+        ],
+      },
+    ],
+    lifestyle: [],
+    family: [],
   };
 }
 
 const Row = ({ icon, label, value, empty }: { icon: string; label: string; value?: string; empty: string }) => (
   <View style={styles.row}>
-    <Ionicons name={icon as any} size={20} color={colors.primary} />
+    <Ionicons name={icon as any} size={18} color={colors.primary} />
     <Text style={styles.label}>{label}</Text>
     <Text style={[styles.value, !value && styles.empty]}>{value || empty}</Text>
   </View>
@@ -53,14 +65,15 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
   const [values, setValues] = useState<SectionValues>({});
   const [tab, setTab] = useState<Tab>(TABS.includes(params.tab) ? params.tab : 'About');
 
-  // reload when the screen comes back into view, so edits show straight away
-  useFocusEffect(useCallback(() => {
-    if (!editable) return;
-    (async () => {
-      setOwn(await buildOwnProfile(user?.name ?? ''));
-      setValues(await getSectionValues(userId));
-    })();
-  }, [editable, userId, user?.name]));
+  useFocusEffect(
+    useCallback(() => {
+      if (!editable) return;
+      (async () => {
+        setOwn(await buildOwnProfile(user?.name ?? ''));
+        setValues(await getSectionValues(userId));
+      })();
+    }, [editable, userId, user?.name])
+  );
 
   useEffect(() => {
     if (editable) return;
@@ -117,12 +130,13 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
 
   const profile: Profile | null = editable ? own : (match || findMatch(params.personId ?? params.profileId));
 
-  // all hooks are above this line
   if (editable && !own) {
     return (
       <SafeAreaView style={styles.safe}>
         <ScreenHeader title="My Profile" onBack={() => navigation.goBack()} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={colors.primary} /></View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -130,15 +144,21 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
     return (
       <SafeAreaView style={styles.safe}>
         <ScreenHeader title="Profile" onBack={() => navigation.goBack()} />
-        <EmptyState icon="person-outline" title="Profile not found" description="This profile isn't available right now." actionLabel="Go back" onAction={() => navigation.goBack()} />
+        <EmptyState
+          icon="person-outline"
+          title="Profile not found"
+          description="This profile isn't available right now."
+          actionLabel="Go back"
+          onAction={() => navigation.goBack()}
+        />
       </SafeAreaView>
     );
   }
 
   const emptyText = editable ? 'Not added yet' : 'Not shared';
   const editSection = (id: string) => navigation.navigate('EditSection', { sectionId: id });
+  const photoUri = (profile as any).avatarUrl || (profile as any).photo || undefined;
 
-  // read-only rows from the profile data (About, and Lifestyle / Family of another person)
   const renderSection = (s: Section, onEdit?: () => void) => (
     <Card key={s.title} style={{ marginBottom: spacing.md }}>
       <View style={styles.sectionHead}>
@@ -153,7 +173,6 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
     </Card>
   );
 
-  // editable cards for Lifestyle and Family on your own profile
   const renderDef = (d: SectionDef, vals: Record<string, string>) => (
     <Card key={d.id} style={{ marginBottom: spacing.md }}>
       <View style={styles.sectionHead}>
@@ -173,57 +192,130 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScreenHeader title={profile.age ? `${profile.name}, ${profile.age}` : profile.name} onBack={() => navigation.goBack()} />
-      <View style={styles.tabs} accessibilityRole="tablist">
-        {TABS.map((t) => (
-          <Pressable key={t} style={[styles.tab, tab === t && styles.tabOn]} onPress={() => setTab(t)} accessibilityRole="tab" accessibilityState={{ selected: tab === t }}>
-            <Text style={[styles.tabText, tab === t && { color: colors.primary, fontFamily: fonts.semibold }]}>{t}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <ScreenHeader
+        title={profile.age ? `${profile.name}, ${profile.age}` : profile.name}
+        onBack={() => navigation.goBack()}
+      />
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Hero Portrait Header */}
+        <View style={[styles.heroCard, shadow.cardHover]}>
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.heroPhoto} resizeMode="cover" />
+          ) : (
+            <View style={styles.heroFallback}>
+              <View style={styles.monogramCircle}>
+                <Text style={styles.monogramInitial}>
+                  {profile.name?.trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          )}
+          <View style={styles.heroOverlay}>
+            <View style={styles.heroNameRow}>
+              <Text style={styles.heroName}>{profile.name}{profile.age ? `, ${profile.age}` : ''}</Text>
+              <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{ marginLeft: 6 }} />
+            </View>
+            {!!profile.profession && (
+              <Text style={styles.heroSub}>
+                <Ionicons name="briefcase" size={13} color="#fff" /> {profile.profession}
+              </Text>
+            )}
+            {!!profile.location && (
+              <Text style={styles.heroSub}>
+                <Ionicons name="location-sharp" size={13} color="#fff" /> {profile.location}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Tab Pills */}
+        <View style={styles.tabs} accessibilityRole="tablist">
+          {TABS.map((t) => (
+            <Pressable
+              key={t}
+              style={[styles.tab, tab === t && styles.tabOn]}
+              onPress={() => setTab(t)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === t }}
+            >
+              <Text style={[styles.tabText, tab === t && styles.tabTextOn]}>{t}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Tab Content */}
         {tab === 'About' && (
-          <>
+          <View style={{ marginTop: spacing.md }}>
             {!!profile.bio && (
               <Card style={{ marginBottom: spacing.md }}>
-                <Text style={styles.sectionTitle}>About me</Text>
-                <Text style={[styles.body, { marginTop: spacing.sm }]}>{profile.bio}</Text>
+                <View style={styles.bioHead}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />
+                  <Text style={styles.sectionTitle}>About me</Text>
+                </View>
+                <Text style={styles.bioBody}>{profile.bio}</Text>
               </Card>
             )}
             {profile.about.map((s) => renderSection(s, editable ? () => navigation.navigate('EditProfile') : undefined))}
-          </>
+          </View>
         )}
 
         {tab === 'Lifestyle' && (
-          editable
-            ? defsFor('lifestyle').map((d) => renderDef(d, values[d.id] ?? {}))
-            : profile.lifestyle.length > 0
+          <View style={{ marginTop: spacing.md }}>
+            {editable
+              ? defsFor('lifestyle').map((d) => renderDef(d, values[d.id] ?? {}))
+              : profile.lifestyle.length > 0
               ? profile.lifestyle.map((s) => renderSection(s))
-              : <EmptyState icon="document-text-outline" title="Nothing shared yet" description="They haven't shared anything here yet." />
+              : (
+                <EmptyState
+                  icon="document-text-outline"
+                  title="Nothing shared yet"
+                  description="They haven't filled out their lifestyle preferences yet."
+                />
+              )}
+          </View>
         )}
 
         {tab === 'Family' && (
-          editable
-            ? defsFor('family').map((d) => renderDef(d, values[d.id] ?? {}))
-            : profile.family.length > 0
+          <View style={{ marginTop: spacing.md }}>
+            {editable
+              ? defsFor('family').map((d) => renderDef(d, values[d.id] ?? {}))
+              : profile.family.length > 0
               ? profile.family.map((s) => renderSection(s))
-              : <EmptyState icon="document-text-outline" title="Nothing shared yet" description="They haven't shared anything here yet." />
+              : (
+                <EmptyState
+                  icon="people-outline"
+                  title="Nothing shared yet"
+                  description="Family background details have not been shared yet."
+                />
+              )}
+          </View>
         )}
 
         {tab === 'Preferences' && (
-          <>
-            <Text style={styles.sectionTitle}>{editable ? 'My Partner Preferences' : `${profile.name}'s Partner Preferences`}</Text>
+          <View style={{ marginTop: spacing.md }}>
+            <Text style={styles.prefSectionTitle}>
+              {editable ? 'My Ideal Match Preferences' : `${profile.name.split(' ')[0]}'s Match Preferences`}
+            </Text>
             {editable ? (
               <Card style={{ paddingVertical: 0, marginTop: spacing.md }}>
                 {defsFor('preferences').map((d, i) => {
                   const filled = d.fields.filter((f) => values[d.id]?.[f.key]).length;
                   return (
-                    <Pressable key={d.id} style={[styles.prefRow, i > 0 && styles.prefBorder]} onPress={() => editSection(d.id)} accessibilityRole="button" accessibilityLabel={`${d.title}. ${d.desc}`}>
-                      <View style={styles.prefIcon}><Ionicons name={d.icon as any} size={20} color={colors.primary} /></View>
+                    <Pressable
+                      key={d.id}
+                      style={[styles.prefRow, i > 0 && styles.prefBorder]}
+                      onPress={() => editSection(d.id)}
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.prefIcon}>
+                        <Ionicons name={d.icon as any} size={18} color={colors.primary} />
+                      </View>
                       <View style={{ flex: 1, marginHorizontal: spacing.md }}>
                         <Text style={styles.prefTitle}>{d.title}</Text>
-                        <Text style={styles.prefDesc}>{filled > 0 ? `${filled} of ${d.fields.length} added` : d.desc}</Text>
+                        <Text style={styles.prefDesc}>
+                          {filled > 0 ? `${filled} of ${d.fields.length} set` : d.desc}
+                        </Text>
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                     </Pressable>
@@ -235,8 +327,10 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
                 {defsFor('preferences').map((d) => renderDef(d, MATCH_PREFERENCES[d.id] ?? {}))}
               </View>
             )}
-            <Text style={styles.disclaimer}>Partner preferences are only used to suggest better matches. You control who can see them.</Text>
-          </>
+            <Text style={styles.disclaimer}>
+              Preferences help suggest the most compatible matches while honoring privacy.
+            </Text>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -244,23 +338,197 @@ export default function ProfileDetailScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, marginHorizontal: spacing.lg },
-  tab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabOn: { borderBottomColor: colors.primary },
-  tabText: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  sectionTitle: { fontFamily: fonts.semibold, fontSize: 16, color: colors.text },
-  pencil: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -10 },
-  body: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.muted },
-  row: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
-  label: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginLeft: spacing.md, width: 100 },
-  value: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.text, textAlign: 'right' },
-  empty: { fontFamily: fonts.regular, color: colors.muted, fontStyle: 'italic' },
-  prefRow: { flexDirection: 'row', alignItems: 'center', minHeight: 68 },
-  prefBorder: { borderTopWidth: 1, borderTopColor: colors.border },
-  prefIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  prefTitle: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text },
-  prefDesc: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  disclaimer: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: spacing.lg, lineHeight: 18 },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // Mint Green: #C0E1CF
+  },
+  scroll: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: 120,
+  },
+
+  heroCard: {
+    width: '100%',
+    height: 300,
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: colors.primarySoft,
+    marginBottom: spacing.md,
+  },
+  heroPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  heroFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.cardSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  monogramCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  monogramInitial: {
+    fontFamily: fonts.display,
+    fontSize: 40,
+    color: colors.primary,
+  },
+  heroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(36, 59, 54, 0.72)',
+    padding: spacing.md,
+  },
+  heroNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroName: {
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    color: '#fff',
+  },
+  heroSub: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    color: '#fff',
+    marginTop: 2,
+  },
+
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.pill,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  tab: {
+    flex: 1,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabOn: {
+    backgroundColor: colors.primary,
+  },
+  tabText: {
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    color: colors.text,
+  },
+  tabTextOn: {
+    fontFamily: fonts.semibold,
+    color: '#fff',
+  },
+
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  sectionTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    color: colors.text,
+  },
+  prefSectionTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: colors.text,
+  },
+  pencil: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bioHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  bioBody: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 42,
+  },
+  label: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: colors.muted,
+    marginLeft: spacing.sm,
+    width: 110,
+  },
+  value: {
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 13.5,
+    color: colors.text,
+    textAlign: 'right',
+  },
+  empty: {
+    fontFamily: fonts.regular,
+    color: colors.muted,
+    fontStyle: 'italic',
+  },
+
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 64,
+  },
+  prefBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  prefIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prefTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.text,
+  },
+  prefDesc: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  disclaimer: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    lineHeight: 18,
+  },
 });

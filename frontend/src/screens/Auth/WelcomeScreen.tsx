@@ -1,121 +1,362 @@
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  Animated,
+  Dimensions,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Button from '../../components/Button';
+import AppBackground from '../../components/AppBackground';
+import AppLogo from '../../components/AppLogo';
 import { colors, fonts, radius, spacing } from '../../theme';
 
-const features = [
-  { icon: 'people-outline', label: 'People with\nshared values' },
-  { icon: 'chatbubble-outline', label: 'Thoughtful\nconversations' },
-  { icon: 'flower-outline', label: 'A guided journey\nforward' },
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+const PILLARS = [
+  { icon: 'shield-checkmark', label: 'Verified Profiles', color: '#4D6257' },
+  { icon: 'sparkles', label: 'AI Setu Guide', color: '#D06D94' },
+  { icon: 'heart-circle', label: 'Values First', color: '#D06D94' },
 ] as const;
 
-// The photo must be saved as assets/welcome.png (next to App.tsx)
-const heroImg = require('../../../assets/welcome.png');
+const TRUST_BADGES = [
+  { emoji: '🛡', label: 'Verified' },
+  { emoji: '🤝', label: 'Guided' },
+  { emoji: '💞', label: 'Meaningful' },
+];
+
+// Individual floating heart component
+function FloatingHeart({ x, delay, duration }: { x: number; delay: number; duration: number }) {
+  const posY = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(posY, { toValue: -300, duration, useNativeDriver: true }),
+          Animated.sequence([
+            Animated.timing(opacity, { toValue: 0.7, duration: 400, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 0, duration: duration - 400, useNativeDriver: true }),
+          ]),
+        ]),
+        Animated.parallel([
+          Animated.timing(posY, { toValue: 0, duration: 0, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.floatingHeart,
+        { left: x, transform: [{ translateY: posY }], opacity },
+      ]}
+    >
+      <Ionicons name="heart" size={18} color="#D06D94" />
+    </Animated.View>
+  );
+}
 
 export default function WelcomeScreen({ navigation }: any) {
+  const scaleHeart = useRef(new Animated.Value(0.95)).current;
+  const entranceFade = useRef(new Animated.Value(0)).current;
+  const entranceSlide = useRef(new Animated.Value(40)).current;
+
+  useEffect(() => {
+    // Pulsing heart
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleHeart, { toValue: 1.1, duration: 900, useNativeDriver: true }),
+        Animated.timing(scaleHeart, { toValue: 0.95, duration: 900, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Entrance animation
+    Animated.parallel([
+      Animated.timing(entranceFade, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(entranceSlide, { toValue: 0, duration: 700, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-        bounces={false}
-      >
-        {/* Header: logo badge, brand name, tagline, language pill */}
-        <View style={styles.top}>
-          <View style={styles.badge}>
-            <Ionicons name="people" size={18} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1, marginLeft: spacing.sm }}>
-            <Text style={styles.brand}>Sambandh Setu</Text>
-            <Text style={styles.tagline}>PEOPLE · CONVERSATIONS · POSSIBILITIES</Text>
-          </View>
-          {/* TODO: language dropdown (19 languages in Figma) */}
-          <View style={styles.lang}>
-            <Text style={styles.langText}>English</Text>
-            <Ionicons name="chevron-down" size={14} color={colors.muted} style={{ marginLeft: 4 }} />
-          </View>
+    <View style={styles.root}>
+      {/* Romantic Atmospheric Dating Wallpaper */}
+      <AppBackground opacity={0.42} />
+
+      {/* Floating hearts */}
+      <FloatingHeart x={SCREEN_W * 0.1} delay={0} duration={3800} />
+      <FloatingHeart x={SCREEN_W * 0.35} delay={1200} duration={4500} />
+      <FloatingHeart x={SCREEN_W * 0.62} delay={600} duration={4000} />
+      <FloatingHeart x={SCREEN_W * 0.82} delay={2000} duration={3500} />
+
+      <SafeAreaView style={styles.safe}>
+        {/* Logo Section */}
+        <View style={styles.logoSection}>
+          <Animated.View style={[styles.heartCircle, { transform: [{ scale: scaleHeart }] }]}>
+            <AppLogo size={68} imageStyle={{ borderRadius: 20 }} />
+          </Animated.View>
+          <Text style={styles.brandTitle}>Sambandh Setu</Text>
+          <Text style={styles.brandTagline}>Intentional · Guided · Meaningful</Text>
         </View>
 
-        {/* Photo: at least 300 tall, grows on taller screens */}
-        <View style={styles.heroWrap}>
-          <Image source={heroImg} style={{ position: 'absolute', width: '100%', height: '120%', top: '-10%' }} resizeMode="cover" />
-        </View>
-
-        {/* Headline and description */}
-        <View style={styles.body}>
-          <Text style={styles.headline}>Meaningful connections,</Text>
-          <Text style={[styles.headline, { color: colors.primary }]}>at your own pace.</Text>
-          <View style={styles.underline} />
-          <Text style={styles.sub}>
-            Discover people, understand each other, and take the next step when you're ready.
+        {/* Hero Card */}
+        <Animated.View
+          style={[
+            styles.heroCard,
+            {
+              opacity: entranceFade,
+              transform: [{ translateY: entranceSlide }],
+            },
+          ]}
+        >
+          <Text style={styles.heroHeadline}>Find Your Person</Text>
+          <Text style={styles.heroSubtitle}>
+            Discover genuine connections built on shared values and guided growth.
           </Text>
 
-          <View style={styles.features}>
-            {features.map((f, i) => (
-              <View key={f.label} style={[styles.feature, i > 0 && styles.featureDivider]}>
-                <View style={styles.iconWrap}>
-                  <Ionicons name={f.icon} size={18} color={colors.primary} />
+          <View style={styles.pillarsContainer}>
+            {PILLARS.map((p) => (
+              <View key={p.label} style={styles.pillarRow}>
+                <View style={styles.pillarIconWrap}>
+                  <Ionicons name={p.icon as any} size={18} color={p.color} />
                 </View>
-                <Text style={styles.featureText}>{f.label}</Text>
+                <Text style={styles.pillarLabel}>{p.label}</Text>
               </View>
             ))}
           </View>
-        </View>
+        </Animated.View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Button title="Create account" onPress={() => navigation.navigate('CreateAccount', { mode: 'signup' })} />
-          <Text style={styles.login}>
-            Already have an account?{' '}
-            <Text
-              style={styles.link}
-             onPress={() => navigation.navigate('Login')}
-              accessibilityRole="button"
+        {/* CTA Buttons */}
+        <Animated.View
+          style={[
+            styles.ctaSection,
+            {
+              opacity: entranceFade,
+              transform: [{ translateY: entranceSlide }],
+            },
+          ]}
+        >
+          <Pressable
+            onPress={() => navigation.navigate('CreateAccount', { mode: 'signup' })}
+            style={({ pressed }) => [styles.primaryBtnWrap, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient
+              colors={['#E07AA0', '#D06D94', '#B8557B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.primaryBtn}
             >
-              Log in
-            </Text>
-          </Text>
-          <View style={styles.privacyRow}>
-            <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
-            <Text style={styles.privacy}>Your information stays under your control.</Text>
-          </View>
+              <Text style={styles.primaryBtnText}>Get Started</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 8 }} />
+            </LinearGradient>
+          </Pressable>
+
+          <Pressable
+            onPress={() => navigation.navigate('Login')}
+            style={({ pressed }) => [styles.outlineBtn, pressed && { opacity: 0.75 }]}
+          >
+            <Text style={styles.outlineBtnText}>Sign In</Text>
+          </Pressable>
+        </Animated.View>
+
+        {/* Trust Badges */}
+        <View style={styles.trustRow}>
+          {TRUST_BADGES.map((b, i) => (
+            <React.Fragment key={b.label}>
+              <View style={styles.trustBadge}>
+                <Text style={styles.trustEmoji}>{b.emoji}</Text>
+                <Text style={styles.trustLabel}>{b.label}</Text>
+              </View>
+              {i < TRUST_BADGES.length - 1 && <View style={styles.trustDivider} />}
+            </React.Fragment>
+          ))}
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  // flexGrow: 1 lets the photo stretch on tall screens; the page scrolls on short ones
-  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg },
+  root: {
+    flex: 1,
+    backgroundColor: '#FAC6D6',
+  },
+  safe: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+  },
+  // Logo
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  heartCircle: {
+    marginBottom: 12,
+    borderRadius: 40,
+    shadowColor: '#D06D94',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  heartGradient: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandTitle: {
+    fontFamily: fonts.display,
+    fontSize: 30,
+    color: '#243B36',
+    textAlign: 'center',
+  },
+  brandTagline: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: '#4D6257',
+    textAlign: 'center',
+    marginTop: 4,
+  },
 
-  top: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm },
-  badge: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  brand: { fontFamily: fonts.display, fontSize: 17, color: colors.text },
-  tagline: { fontFamily: fonts.medium, fontSize: 7.5, letterSpacing: 0.6, color: colors.primary, marginTop: 1 },
-  lang: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 36, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff' },
-  langText: { fontFamily: fonts.medium, fontSize: 13, color: colors.text },
+  // Hero Card
+  heroCard: {
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 28,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#D06D94',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
+  },
+  heroHeadline: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    color: '#243B36',
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: '#4D6257',
+    lineHeight: 21,
+    marginBottom: spacing.lg,
+  },
+  pillarsContainer: {
+    gap: 12,
+  },
+  pillarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pillarIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(208,109,148,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  pillarLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: '#243B36',
+  },
 
-  // Change minHeight to make the photo shorter or taller (try 260 to 360)
-  heroWrap: { flex: 1, minHeight: 300, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.primarySoft, marginTop: spacing.sm },
+  // CTA
+  ctaSection: {
+    gap: 12,
+    marginBottom: spacing.xl,
+  },
+  primaryBtnWrap: {
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    shadowColor: '#D06D94',
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 17,
+    borderRadius: radius.pill,
+  },
+  primaryBtnText: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  outlineBtn: {
+    borderWidth: 2,
+    borderColor: '#D06D94',
+    borderRadius: radius.pill,
+    paddingVertical: 15,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  outlineBtnText: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: '#D06D94',
+  },
 
-  body: { paddingTop: spacing.lg },
-  headline: { fontFamily: fonts.display, fontSize: 27, lineHeight: 34, color: colors.text },
-  underline: { width: 44, height: 3, borderRadius: 2, backgroundColor: colors.primary, marginTop: 4 },
-  sub: { fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 20, color: colors.muted, marginTop: spacing.md },
+  // Trust badges
+  trustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 0,
+  },
+  trustBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: radius.pill,
+  },
+  trustEmoji: {
+    fontSize: 13,
+  },
+  trustLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    color: '#4D6257',
+  },
+  trustDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: 'rgba(77,98,87,0.2)',
+    marginHorizontal: 4,
+  },
 
-  features: { flexDirection: 'row', marginTop: spacing.lg },
-  feature: { flex: 1, alignItems: 'center' },
-  featureDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
-  iconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  featureText: { fontFamily: fonts.regular, fontSize: 11, lineHeight: 15, color: colors.muted, textAlign: 'center' },
-
-  footer: { paddingTop: spacing.lg, paddingBottom: spacing.lg },
-  login: { textAlign: 'center', fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginTop: spacing.md },
-  link: { fontFamily: fonts.semibold, color: colors.primary },
-  privacyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm },
-  privacy: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted, marginLeft: 6 },
+  // Floating hearts
+  floatingHeart: {
+    position: 'absolute',
+    bottom: 100,
+    zIndex: 0,
+  },
 });

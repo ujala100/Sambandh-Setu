@@ -11,7 +11,7 @@ export default function OtpInput({
   onChangeText?: (text: string) => void;
   length?: number;
 }) {
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<any>(null);
 
   return (
     <Pressable onPress={() => inputRef.current?.focus()} style={styles.container}>
@@ -39,9 +39,34 @@ export default function OtpInput({
 
 const styles = StyleSheet.create({
   container: { position: 'relative' },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  box: { width: 46, height: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  active: { borderColor: colors.primary },
-  digit: { fontFamily: fonts.semibold, fontSize: 20, color: colors.text },
-  hiddenInput: { position: 'absolute', opacity: 0, width: 1, height: 1 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  box: {
+    flex: 1,
+    height: 54,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card, // Soft Cream: #FDF4F2
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  active: {
+    borderColor: colors.primary, // Rose Pink
+    backgroundColor: '#fff',
+    shadowColor: colors.primary,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  digit: {
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    color: colors.text,
+  },
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 1,
+    height: 1,
+  },
 });

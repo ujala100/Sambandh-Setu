@@ -8,7 +8,6 @@ type Props = { value: string; onChangeText: (v: string) => void };
 export default function PhoneInput({ value, onChangeText }: Props) {
   const [focused, setFocused] = useState(false);
   return (
-    // the border is on the whole box (flag + +91 + number), so the blue outline covers all of it
     <View style={[styles.box, focused && focusedBox]}>
       <Text style={styles.flag}>🇮🇳</Text>
       <Text style={styles.code}>+91</Text>
@@ -30,9 +29,18 @@ export default function PhoneInput({ value, onChangeText }: Props) {
 }
 
 const styles = StyleSheet.create({
-  box: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: radius.md, paddingHorizontal: 14, minHeight: 52, borderWidth: 1.5, borderColor: colors.border },
+  box: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card, // Soft Cream: #FDF4F2
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    minHeight: 52,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+  },
   flag: { fontSize: 20, marginRight: 6 },
   code: { fontFamily: fonts.medium, fontSize: 15, color: colors.text },
-  divider: { width: 1, height: 22, backgroundColor: colors.border, marginHorizontal: 12 },
+  divider: { width: 1, height: 22, backgroundColor: colors.borderLight, marginHorizontal: 12 },
   input: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: colors.text, minHeight: 44 },
 });
