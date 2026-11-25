@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Sambandh Setu",
+    "slug": "sambandh-setu",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sambandhsetu.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E8F0FF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "name": "Sambandh Setu",
+      "shortName": "Sambandh Setu",
+      "description": "Find with purpose. Connect with trust.",
+      "themeColor": "#2C67C5",
+      "backgroundColor": "#F8FAFC",
+      "lang": "en-IN"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "scheme": "sambandhsetu"
+  }
+}

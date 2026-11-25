@@ -1,0 +1,31 @@
+# Deploys main to Vercel. Needs repository secrets VERCEL_TOKEN, VERCEL_ORG_ID and
+# VERCEL_PROJECT_ID. Not needed if the repository is connected in Vercel (Project Settings > Git).
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when Vercel secrets are not set
+        if: env.VERCEL_TOKEN == ''
+        run: echo "VERCEL_TOKEN is not set; skipping deploy."
+      - uses: actions/setup-node@v4
+        if: env.VERCEL_TOKEN != ''
+        with:
+          node-version: 24
+      - if: env.VERCEL_TOKEN != ''
+        run: npx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - if: env.VERCEL_TOKEN != ''
+        run: npx vercel@latest build --prod --token="$VERCEL_TOKEN"
+      - if: env.VERCEL_TOKEN != ''
+        run: npx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"

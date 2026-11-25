@@ -1,0 +1,6 @@
+setu_ai
+**/node_modules
+**/.expo
+dist
+backend/backend/data/*.db*
+*.log
