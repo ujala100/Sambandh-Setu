@@ -31,6 +31,11 @@
     "plugins": [
       "expo-font"
     ],
-    "scheme": "sambandhsetu"
+    "scheme": "sambandhsetu",
+    "extra": {
+      "eas": {
+        "projectId": "f92ea9bd-63c7-48a5-8569-7e0cfefacd2d"
+      }
+    }
   }
 }
