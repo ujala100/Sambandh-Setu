@@ -262,8 +262,9 @@ function GettingStartedCard({ hasPreferences, expanded, onToggle, onStart }: {
               strokeDasharray={circumference}
               strokeDashoffset={circumference * (1 - progress)}
               strokeLinecap="round"
-              rotation={-90}
-              origin="24,24"
+              transform="rotate(-90 24 24)"
+              
+        
             />
           </Svg>
           <View pointerEvents="none" style={styles.startProgressCenter}>
