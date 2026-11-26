@@ -62,6 +62,14 @@ def test_free_text_is_routed(message, expected):
     assert ask(message=message).intent.value == expected
 
 
+@pytest.mark.parametrize("message,expected", [
+    ("Are there hobbies or interests that are important to you?", "conversation_ideas"),
+    ("I want to understand him", "help_me_understand"),
+])
+def test_screenshot_free_text_is_routed(message, expected):
+    assert ask(message=message).intent.value == expected
+
+
 def test_quick_action_beats_free_text():
     assert ask(intent="conversation_ideas", message="Can you explain this?").intent.value == "conversation_ideas"
 

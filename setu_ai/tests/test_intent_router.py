@@ -13,6 +13,7 @@ def test_conversation_ideas_variations():
         "What questions can we ask each other?",
         "Suggest some topics to talk about.",
         "I need ideas for a conversation.",
+        "Are there hobbies or interests that are important to you?",
     ]
 
     for message in messages:
@@ -31,6 +32,9 @@ def test_help_me_understand_variations():
         "Can you clarify this?",
         "What does this mean?",
         "I'm confused about this.",
+        "I want to understand him.",
+        "I want to understand her better.",
+        "I want to know them better.",
     ]
 
     for message in messages:

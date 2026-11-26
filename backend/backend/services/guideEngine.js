@@ -60,7 +60,7 @@ const detectIntent = (t, explicit) => {
     if (explicit) return explicit;
     if (/(privacy|safe|block|report|share|data|see my)/.test(t)) return "privacy_safety";
     if (/(next|what now|what should we do|how to move|stage)/.test(t)) return "next_steps";
-    if (/(understand|explain|what does|meaning|why)/.test(t)) return "help_me_understand";
+    if (/(understand|explain|what does|meaning|why|want to know more|know (him|her|them) better|get to know)/.test(t)) return "help_me_understand";
     return "conversation_ideas";
 };
 
