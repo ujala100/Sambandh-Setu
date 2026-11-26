@@ -8,7 +8,9 @@ process.env.OTP_HMAC_SECRET = require("crypto").randomBytes(32).toString("hex");
 process.env.RATE_LIMIT_AUTH_IP_MAX = "1000";
 process.env.RATE_LIMIT_GLOBAL_MAX = "100000";
 delete process.env.DATABASE_URL;
-delete process.env.GUIDE_SERVICE_URL;
+// app.js loads backend/.env after this helper. An empty value prevents that local
+// .env from routing tests through an external Guide service.
+process.env.GUIDE_SERVICE_URL = "";
 
 const crypto = require("crypto");
 const { initDb, resetDb, closeDb } = require("../db");

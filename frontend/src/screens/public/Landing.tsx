@@ -79,7 +79,7 @@ function Welcome({ navigation }: any) {
   const signup = () => navigation.navigate('SignUp');
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: page === 2 ? '#0D4338' : '#F8F5E9' }} edges={['top', 'left', 'right', 'bottom']}>
-      <ScrollView
+      <Animated.ScrollView
         ref={pager}
         horizontal
         pagingEnabled
@@ -217,7 +217,7 @@ function Welcome({ navigation }: any) {
         <Animated.View style={[{ width, flex: 1 }, pageMotion(3)]}>
           <TwoKeyVaultScreen width={width} height={height} onContinue={signup} onSkip={signup} />
         </Animated.View>
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
