@@ -60,8 +60,7 @@ export function MyProfile({ navigation }: any) {
                 strokeDasharray={ringCircumference}
                 strokeDashoffset={ringCircumference * (1 - completeness / 100)}
                 strokeLinecap="round"
-                rotation={-90}
-                origin="30,30"
+                transform="rotate(-90 30 30)"
               />
             </Svg>
             <Text style={styles.ringText}>{Math.round(completeness)}%</Text>
